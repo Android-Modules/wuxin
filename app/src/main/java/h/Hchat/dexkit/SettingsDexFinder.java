@@ -37,7 +37,7 @@ import de.robv.android.xposed.XposedBridge;
  */
 public class SettingsDexFinder {
 
-    private static final String TAG = "[Hchat:SettingsDex]";
+    private static final String TAG = "[WCX:SettingsDex]";
     private static final String PREF_CLASS = "com.tencent.mm.ui.base.preference.Preference";
     private static final String CACHE_PREFS = "Hchat_settings_dex_cache";
     private static final String CACHE_COMPLETE = "cache.complete";

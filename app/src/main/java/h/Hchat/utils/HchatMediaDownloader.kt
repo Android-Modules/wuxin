@@ -32,7 +32,7 @@ object HchatMediaDownloader {
         val mediaRoot = runCatching {
             appContext.externalMediaDirs?.firstOrNull { it != null }
         }.getOrNull() ?: File("/storage/emulated/0/Android/media/${appContext.packageName}")
-        return File(File(mediaRoot, "Hchat"), child).apply { mkdirs() }
+        return File(File(mediaRoot, "WCX"), child).apply { mkdirs() }
     }
 
     @JvmStatic
@@ -115,7 +115,7 @@ object HchatMediaDownloader {
         }.onFailure {
             tmpFile.delete()
             finalFile.delete()
-            HLog.e("[Hchat:MediaDownloader] 视频号视频下载解密失败: ${it.message}", it)
+            HLog.e("[WCX:MediaDownloader] 视频号视频下载解密失败: ${it.message}", it)
         }.getOrNull()
     }
 
@@ -170,7 +170,7 @@ object HchatMediaDownloader {
                     ?.listFiles { file -> file.name.startsWith(".${target.name}.download.") && file.name.endsWith(".tmp") }
                     ?.forEach { file -> runCatching { file.delete() } }
             }
-            HLog.e("[Hchat:MediaDownloader] 下载失败: ${it.message}", it)
+            HLog.e("[WCX:MediaDownloader] 下载失败: ${it.message}", it)
         }.getOrNull()
     }
 

@@ -121,7 +121,7 @@ abstract class BaseFeature : Feature {
 
     protected fun logError(message: String, throwable: Throwable?) {
         HLog.e(
-            "[Hchat:${featureId()}] $message" +
+            "[WCX:${featureId()}] $message" +
                 (throwable?.let { ": ${it.message}" } ?: ""),
             throwable
         )

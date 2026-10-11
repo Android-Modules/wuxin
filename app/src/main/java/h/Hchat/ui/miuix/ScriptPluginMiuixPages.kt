@@ -3,6 +3,7 @@ package h.Hchat.ui.miuix
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
@@ -356,6 +357,18 @@ private fun Intent.preferSystemDocumentsUi(context: Context): Intent {
     return this
 }
 
+/** Compose 的 LocalContext 常被 ContextThemeWrapper/ContextWrapper 包裹，这里向上解包到真正承载它的 Activity。 */
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    var depth = 0
+    while (current != null && depth < 10) {
+        if (current is Activity) return current
+        current = (current as? ContextWrapper)?.baseContext
+        depth++
+    }
+    return null
+}
+
 private object ScriptPluginDocumentBridge {
     private val hookedClasses = HashSet<Class<*>>()
     private var exportCallback: ((Uri) -> Unit)? = null
@@ -548,7 +561,6 @@ private sealed class DetailPage {
         val sourceGroup: FeatureGroupEntry? = null,
         val returnToSearch: Boolean = false
     ) : DetailPage()
-    data class ScriptPluginAgent(val parentFeature: Feature? = null) : DetailPage()
     data class ScriptPluginMarket(val parentFeature: Feature? = null) : DetailPage()
     data class ScriptPluginManager(val parentFeature: Feature? = null) : DetailPage()
 }
@@ -578,7 +590,6 @@ fun ScriptPluginSettingsContent(
     context: Context,
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit,
     onOpenMarket: () -> Unit,
-    onOpenAgent: () -> Unit,
     onOpenManager: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -639,7 +650,7 @@ fun ScriptPluginSettingsContent(
                             pluginListVersion++
                         }
                     }
-                }, "Hchat-Script-Global").start()
+                }, "WCX-Script-Global").start()
             }
         }
         if (showPluginRootDialog) {
@@ -719,7 +730,7 @@ fun ScriptPluginSettingsContent(
                                         ).show()
                                     }
                                 }
-                            }, "Hchat-Script-${plugin.id}").start()
+                            }, "WCX-Script-${plugin.id}").start()
                         }
                     )
                     if (index != plugins.lastIndex) InsetDivider()
@@ -868,7 +879,7 @@ fun ScriptPluginManagerPage(
         onDispose {
             pageActive.set(false)
             activeImportSessionId.getAndSet(null)?.let { sessionId ->
-                Thread({ ScriptPluginManager.discardImport(context, sessionId) }, "Hchat-Plugin-Import-Cleanup").start()
+                Thread({ ScriptPluginManager.discardImport(context, sessionId) }, "WCX-Plugin-Import-Cleanup").start()
             }
         }
     }
@@ -937,7 +948,7 @@ fun ScriptPluginManagerPage(
     }
 
     fun launchImportPicker() {
-        val activity = context as? Activity
+        val activity = context.findActivity()
         if (activity == null) {
             Toast.makeText(context, "无法打开文件选择器", Toast.LENGTH_SHORT).show()
             return
@@ -962,7 +973,7 @@ fun ScriptPluginManagerPage(
                         result.getOrNull()?.let { inspection ->
                             Thread(
                                 { ScriptPluginManager.discardImport(context, inspection.sessionId) },
-                                "Hchat-Plugin-Import-Late-Cleanup"
+                                "WCX-Plugin-Import-Late-Cleanup"
                             ).start()
                         }
                         return@post
@@ -977,7 +988,7 @@ fun ScriptPluginManagerPage(
                         onFailure = { showScriptPluginManagerError(context, it) }
                     )
                 }
-            }, "Hchat-Plugin-Import-Inspect").start()
+            }, "WCX-Plugin-Import-Inspect").start()
         }
     }
 
@@ -1233,7 +1244,7 @@ fun ScriptPluginManagerPage(
                 importInspection = null
                 Thread(
                     { ScriptPluginManager.discardImport(context, inspection.sessionId) },
-                    "Hchat-Plugin-Import-Discard"
+                    "WCX-Plugin-Import-Discard"
                 ).start()
             },
             onConfirm = {
@@ -1770,7 +1781,7 @@ private fun launchScriptPluginExport(
         Toast.makeText(context, "未选择插件", Toast.LENGTH_SHORT).show()
         return
     }
-    val activity = context as? Activity
+    val activity = context.findActivity()
     if (activity == null) {
         Toast.makeText(context, "无法打开文件选择器", Toast.LENGTH_SHORT).show()
         return
@@ -1796,7 +1807,7 @@ private fun launchScriptPluginExport(
                     onFailure = { showScriptPluginManagerError(context, it) }
                 )
             }
-        }, "Hchat-Plugin-Export").start()
+        }, "WCX-Plugin-Export").start()
     }
 }
 
@@ -1804,17 +1815,17 @@ private fun scriptPluginExportFileName(plugins: List<ScriptPluginRuntime.ScriptP
     val base = if (plugins.size == 1) {
         plugins.first().displayName ?: plugins.first().name.ifBlank { plugins.first().id }
     } else {
-        "Hchat_脚本插件_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}"
+        "WCX_脚本插件_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}"
     }
     val safe = base.removeSuffix(".zip")
         .replace(Regex("""[\\/:*?\"<>|]"""), "_")
         .trim()
-        .ifBlank { "Hchat_脚本插件" }
+        .ifBlank { "WCX_脚本插件" }
     return "$safe.zip"
 }
 
 private fun showAfterDialogDismiss(context: Context, action: () -> Unit) {
-    val activity = context as? Activity
+    val activity = context.findActivity()
     if (activity != null) {
         activity.window.decorView.postOnAnimation(action)
     } else {
@@ -1823,7 +1834,7 @@ private fun showAfterDialogDismiss(context: Context, action: () -> Unit) {
 }
 
 private fun showScriptPluginManagerError(context: Context, error: Throwable) {
-    h.Hchat.utils.HLog.e("[Hchat:ScriptManager] ${error.message ?: "操作失败"}", error)
+    h.Hchat.utils.HLog.e("[WCX:ScriptManager] ${error.message ?: "操作失败"}", error)
     Toast.makeText(context, error.message ?: "操作失败", Toast.LENGTH_LONG).show()
 }
 
@@ -1970,7 +1981,7 @@ private fun ScriptPluginPathDialog(
                     text = "复制路径",
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("HchatScriptDir", path))
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("WcxScriptDir", path))
                         Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
                         onClose()
                     },
@@ -2782,14 +2793,12 @@ fun ScriptPluginMiuixTabContent(
     context: Context,
     onOpenManager: () -> Unit = {},
     onOpenMarket: () -> Unit = {},
-    onOpenAgent: () -> Unit = {},
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit = {},
 ) {
     ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
         context = context,
         onOpenReadme = onOpenReadme,
         onOpenMarket = onOpenMarket,
-        onOpenAgent = onOpenAgent,
         onOpenManager = onOpenManager,
     )
 }

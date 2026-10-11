@@ -8,7 +8,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 object HchatStorage {
-    private const val TAG = "[Hchat:Storage]"
+    private const val TAG = "[WCX:Storage]"
     private const val DIR_NAME = "Hchat"
     private val cache = ConcurrentHashMap<String, SharedPreferences>()
 

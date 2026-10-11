@@ -214,7 +214,7 @@ object CustomFriendAvatarStore {
             .joinToString("") { byte -> "%02x".format(byte) }
     }
 
-    private const val TAG = "[Hchat:CustomFriendAvatar]"
+    private const val TAG = "[WCX:CustomFriendAvatar]"
     private const val DIRECTORY_NAME = "custom_friend_avatars"
     private const val MAX_DIMENSION = 1024
 }

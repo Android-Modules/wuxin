@@ -294,7 +294,7 @@ class WeChatLocalMessageApi(
     }
 
     companion object {
-        private const val TAG = "[Hchat:LocalMessage]"
+        private const val TAG = "[WCX:LocalMessage]"
     }
 
     private data class TimedInsert(

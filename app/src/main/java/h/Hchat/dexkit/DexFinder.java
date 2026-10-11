@@ -37,7 +37,7 @@ import de.robv.android.xposed.XposedBridge;
  */
 public class DexFinder {
 
-    private static final String TAG = "[Hchat:DexFinder]";
+    private static final String TAG = "[WCX:DexFinder]";
     private static final String CACHE_PREFS = "Hchat_dex_cache";
     private static final String CACHE_COMPLETE = "cache.complete";
     private static final String CACHE_KEY = "cache.key";

@@ -18,6 +18,7 @@ import com.Johnny.wcx.BuildConfig
 import h.Hchat.dexkit.DexBridgeHolder
 import h.Hchat.dexkit.DexFinder
 import h.Hchat.hooks.api.core.WeChatApis
+import com.Johnny.wcx.utils.WeLogger
 import h.Hchat.hooks.api.runtime.WeChatVersionApi
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.items.protobuf.ProtobufPacketRuntime
@@ -55,7 +56,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
 
 object ScriptPluginRuntime {
-    private const val TAG = "[Hchat:Script]"
+    private const val TAG = "[WCX:Script]"
     private const val MAIN_FILE = "main.java"
     private const val INFO_FILE = "info.prop"
     private const val README_FILE = "README.md"
@@ -347,14 +348,30 @@ object ScriptPluginRuntime {
         return false
     }
 
-    private fun isScriptApiReady(): Boolean {
-        val rows = WeChatApis.database()?.query(
-            "SELECT name FROM sqlite_master " +
-                "WHERE type='table' AND name IN ('rcontact','chatroom')",
-            null
-        ).orEmpty()
-        val tables = rows.mapNotNull { it["name"]?.toString() }.toSet()
-        return tables.contains("rcontact") && tables.contains("chatroom")
+    private fun isScriptApiReady(): Boolean = scriptApiReadinessDetail() == null
+
+    /**
+     * 诊断：脚本 API 未就绪的具体原因；已就绪时返回 null。
+     *
+     * 总开关只提示「尚未就绪」时无法定位问题（DexKit 未完成 / 数据库 API 未解析 / 缺表 / 查询异常），
+     * 这里把原因一并返回，写入 WCX 日志并附在错误提示里。
+     */
+    fun scriptApiReadinessDetail(): String? {
+        val database = runCatching { WeChatApis.database() }.getOrNull()
+            ?: return "微信数据库 API 未解析（DexKit 预热未完成或解析失败）"
+        return runCatching {
+            val rows = database.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type='table' AND name IN ('rcontact','chatroom')",
+                null
+            ).orEmpty()
+            val tables = rows.mapNotNull { it["name"]?.toString() }.toSet()
+            if (tables.contains("rcontact") && tables.contains("chatroom")) {
+                null
+            } else {
+                "微信数据库缺少表（rcontact=${tables.contains("rcontact")}, chatroom=${tables.contains("chatroom")}）"
+            }
+        }.getOrElse { "查询微信数据库失败：${it.message}" }
     }
 
     private fun isPluginRuntimeEnabled(context: Context): Boolean {
@@ -375,8 +392,14 @@ object ScriptPluginRuntime {
         this.appContext = appContext
         ensureDirs(appContext)
         startPluginObservers(appContext)
-        if (enabled && !isScriptApiReady()) {
-            return Result.failure(IllegalStateException("微信联系人数据库尚未就绪，请稍后重试"))
+        if (enabled) {
+            val notReadyDetail = scriptApiReadinessDetail()
+            if (notReadyDetail != null) {
+                WeLogger.e(TAG, "脚本总开关未就绪：$notReadyDetail")
+                return Result.failure(
+                    IllegalStateException("微信联系人数据库尚未就绪，请稍后重试（$notReadyDetail）")
+                )
+            }
         }
         val prefs = HchatStorage.preferences(appContext, ScriptPluginSettings.PREFS_NAME)
         val result = if (enabled) {
