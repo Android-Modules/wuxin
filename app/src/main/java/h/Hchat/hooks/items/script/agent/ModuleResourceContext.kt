@@ -3,7 +3,7 @@ package h.Hchat.hooks.items.script.agent
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Resources
-import com.Johnny.wcx.BuildConfig
+import h.Hchat.BuildConfig
 
 class ModuleResourceContext private constructor(
     base: Context,

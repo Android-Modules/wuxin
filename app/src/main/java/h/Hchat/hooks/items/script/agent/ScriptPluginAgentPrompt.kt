@@ -1,7 +1,7 @@
 package h.Hchat.hooks.items.script.agent
 
 import android.content.Context
-import com.Johnny.wcx.BuildConfig
+import h.Hchat.BuildConfig
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import org.json.JSONObject
 import java.security.MessageDigest
