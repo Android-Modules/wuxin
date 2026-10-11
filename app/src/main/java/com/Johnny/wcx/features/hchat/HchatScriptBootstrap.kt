@@ -29,9 +29,10 @@ import org.luckypray.dexkit.DexKitBridge
  *    「微信联系人数据库尚未就绪」。
  * 2. [ScriptPluginFeature] —— 脚本插件运行时本体（插件加载、菜单/消息 Hook 等）。
  *
- * 关键点：安装完必须调用 [DexInstallScheduler.markDexBridgeReady]，否则 BRIDGE 阶段
- * 的延迟任务（含微信 API 的 `resolveAll()` 预热）永远不会执行，数据库始终不可用。
- * 这一步在原项目中由 `FeatureManager.installAll` 尾部完成。
+ * 关键点：
+ * - 每个 Feature 必须先 `onInit()`（触发 onFeatureInit / registerSettingsProvider）再 `install()`。
+ * - 安装完必须调用 [DexInstallScheduler.markDexBridgeReady]，否则 BRIDGE 阶段的延迟任务
+ *   （含微信 API 的 `resolveAll()` 预热）永远不会执行，数据库始终不可用。
  */
 object HchatScriptBootstrap {
 
@@ -44,10 +45,16 @@ object HchatScriptBootstrap {
     @Volatile
     private var dexKitBridgeRef: DexKitBridge? = null
 
+    /** 运行时诊断状态：记录最近一次安装走到哪一步或失败原因，供脚本页直接展示。 */
+    @Volatile
+    var status: String = "未执行"
+        private set
+
     @Synchronized
     fun install() {
         if (installed) return
         installed = true
+        status = "开始安装"
 
         runCatching {
             // UI 兜底：无论 DexKit 是否初始化成功，都先确保脚本设置 provider 已注册，
@@ -58,13 +65,16 @@ object HchatScriptBootstrap {
                     registry.registerProvider(ScriptPluginSettingsProvider())
                 }
             }.onFailure { WeLogger.e(TAG, "预注册脚本设置 provider 失败", it) }
+            status = "已注册设置 provider"
 
             val hostContext = HostInfo.application
             val hostClassLoader = ClassLoaders.HOST
             val lpparam = Xp51HookEntry.getLoadPackageParam()
+            status = "构造上下文(host=${hostContext.packageName})"
 
             val dexKitBridge = DexKitBridge.create(HostInfo.appInfo.sourceDir)
             dexKitBridgeRef = dexKitBridge
+            status = "DexKitBridge 创建成功"
 
             val dexFinder = DexFinder(dexKitBridge, hostClassLoader, hostContext)
             val dexBridgeHolder = DexBridgeHolder(
@@ -73,6 +83,7 @@ object HchatScriptBootstrap {
                 hostClassLoader,
                 lpparam.appInfo.sourceDir
             )
+            status = "DexFinder 构造成功"
 
             // moduleContext：Hchat 原本通过 createPackageContext(模块包名) 获取，用于读取模块资源。
             // WCX 的脚本资源已随模块 ClassLoader 一起加载，这里直接用宿主 Context 兜底即可。
@@ -88,30 +99,40 @@ object HchatScriptBootstrap {
                 dexBridgeHolder,
                 UIRegistry.get()
             )
+            status = "FeatureContext 构造成功"
 
-            // 注意：必须先 onInit（触发 onFeatureInit / registerSettingsProvider），再 install。
-            // Hchat 原项目中这一步由 FeatureManager.installAll 完成；漏掉 onInit 会导致
-            // UIRegistry 中缺少 script_plugin 的 settings provider，脚本设置页无法打开。
             val apiFeature = WechatApiFeature()
             runCatching { apiFeature.onInit(context) }
                 .onFailure { WeLogger.e(TAG, "WechatApiFeature 初始化失败", it) }
             runCatching { apiFeature.install(context) }
                 .onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
+            status = "WechatApiFeature 已安装"
 
             val scriptFeature = ScriptPluginFeature()
             runCatching { scriptFeature.onInit(context) }
                 .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 初始化失败", it) }
             runCatching { scriptFeature.install(context) }
                 .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
+            status = "ScriptPluginFeature 已安装"
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
             // （resolveAll + 数据库 API 解析），数据库才会就绪。无论前面是否局部失败都要执行。
             runCatching { DexInstallScheduler.markDexBridgeReady() }
                 .onFailure { WeLogger.e(TAG, "markDexBridgeReady 失败", it) }
+            status = "已标记 DexBridgeReady，等待 DexKit 定位"
 
             WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
         }.onFailure {
+            status = "安装失败: ${it.javaClass.simpleName}: ${it.message}"
+            installed = false
             WeLogger.e(TAG, "Hchat 脚本子系统安装失败", it)
         }
+    }
+
+    /** 诊断用：强制重新跑一次安装。 */
+    @Synchronized
+    fun reinstall() {
+        installed = false
+        install()
     }
 }
