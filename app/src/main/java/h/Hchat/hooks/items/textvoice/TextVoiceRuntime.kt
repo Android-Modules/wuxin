@@ -506,6 +506,6 @@ internal class TextVoiceRuntime(
         const val COMMAND_ENGLISH = "#tts e"
         const val CACHE_PREFIX = "hchat_text_voice_"
         const val MENU_ITEM_ID = 0x48435456
-        const val MENU_TITLE = "转语音播放[H]"
+        const val MENU_TITLE = "转语音播放[W]"
     }
 }

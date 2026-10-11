@@ -183,6 +183,6 @@ private class MultiRecallHooker(
 
     companion object {
         private const val MENU_ITEM_ID = 0x48435243
-        private const val MENU_TITLE = "批量撤回[H]"
+        private const val MENU_TITLE = "批量撤回[W]"
     }
 }

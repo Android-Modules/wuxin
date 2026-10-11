@@ -614,8 +614,8 @@ private class SelectedMessagesHooker(
         private const val CACHE_RETRANSMIT_DONE = "retransmit_done_v1"
         private const val MENU_MASS_SEND_ID = 0x4843534d
         private const val MENU_SCHEDULE_ID = 0x48435354
-        private const val MENU_MASS_SEND_TITLE = "群发助手[H]"
-        private const val MENU_SCHEDULE_TITLE = "定时转发[H]"
+        private const val MENU_MASS_SEND_TITLE = "群发助手[W]"
+        private const val MENU_SCHEDULE_TITLE = "定时转发[W]"
     }
 
     private enum class MenuAction {

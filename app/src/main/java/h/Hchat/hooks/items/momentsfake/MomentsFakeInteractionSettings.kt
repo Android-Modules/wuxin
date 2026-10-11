@@ -33,7 +33,7 @@ object MomentsFakeInteractionSettings {
     const val DEFAULT_FAKE_COMMENT_ENABLE = false
     const val DEFAULT_FAKE_FORWARD_ENABLE = false
     const val DEFAULT_FAKE_FORWARD_HIDE_MENU = false
-    const val DEFAULT_FAKE_FORWARD_MENU_TEXT = "伪转发[H]"
+    const val DEFAULT_FAKE_FORWARD_MENU_TEXT = "伪转发[W]"
     const val DEFAULT_FAKE_FORWARD_DEBUG_LOG = false
     const val DEFAULT_FAKE_LIKE_USE_NON_FRIENDS = false
     const val DEFAULT_FAKE_COMMENT_USE_NON_FRIENDS = false
@@ -42,8 +42,8 @@ object MomentsFakeInteractionSettings {
     const val DEFAULT_FAKE_LIKE_AUTO_SELECT_COUNT = 50
     const val DEFAULT_FAKE_LIKE_HIDE_MENU = false
     const val DEFAULT_FAKE_COMMENT_HIDE_MENU = false
-    const val DEFAULT_FAKE_LIKE_MENU_TEXT = "伪集赞[H]"
-    const val DEFAULT_FAKE_COMMENT_MENU_TEXT = "伪评论[H]"
+    const val DEFAULT_FAKE_LIKE_MENU_TEXT = "伪集赞[W]"
+    const val DEFAULT_FAKE_COMMENT_MENU_TEXT = "伪评论[W]"
     const val DEFAULT_FAKE_COMMENT_RANDOM_CONTENT = false
 
     fun commentContents(prefs: SharedPreferences): List<String> {

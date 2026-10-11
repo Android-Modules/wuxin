@@ -389,7 +389,7 @@ private class VoicePreviewRuntime(
 
     private companion object {
         const val MENU_ITEM_ID = 0x48435650
-        const val MENU_TITLE = "预览语音[H]"
+        const val MENU_TITLE = "预览语音[W]"
         const val CACHE_PREFIX = "hchat_voice_preview_"
         const val FILE_TYPE_MP3 = 2
     }

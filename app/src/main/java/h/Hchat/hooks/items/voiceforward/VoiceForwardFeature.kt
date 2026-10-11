@@ -2104,13 +2104,13 @@ private class VoiceForwardHooker(
         )
         private const val DEFAULT_VOICE_DURATION_MS = 1000
         private const val MULTI_VOICE_NATIVE_FORWARD_ID = 0x4843564d
-        private const val MULTI_VOICE_NATIVE_FORWARD_TITLE = "逐条转发语音[H]"
+        private const val MULTI_VOICE_NATIVE_FORWARD_TITLE = "逐条转发语音[W]"
         private const val MULTI_VOICE_MERGE_ID = 0x4843564e
-        private const val MULTI_VOICE_MERGE_TITLE = "合并语音[H]"
+        private const val MULTI_VOICE_MERGE_TITLE = "合并语音[W]"
         private const val MENU_FORWARD_ID = 0x48435646
         private const val MENU_SAVE_ID = 0x48435653
-        private const val MENU_FORWARD_TITLE = "转发[H]"
-        private const val MENU_SAVE_TITLE = "保存[H]"
+        private const val MENU_FORWARD_TITLE = "转发[W]"
+        private const val MENU_SAVE_TITLE = "保存[W]"
         private const val SAVE_MP3_HZ = 24000
         private const val FILE_TYPE_SILK = 1
         private const val FAVORITE_VOICE_TYPE = 3

@@ -59,7 +59,7 @@ class MomentsFakeInteractionFeature : BaseFeature() {
             SnsContextMenuDispatcher.Entry(
                 owner = LIKE_OWNER,
                 itemId = MENU_FAKE_LIKE_ID,
-                title = "伪集赞[H]",
+                title = "伪集赞[W]",
                 titleProvider = {
                     menuTitle(
                         prefs.getString(MomentsFakeInteractionSettings.KEY_FAKE_LIKE_MENU_TEXT, ""),
@@ -111,7 +111,7 @@ class MomentsFakeInteractionFeature : BaseFeature() {
             SnsContextMenuDispatcher.Entry(
                 owner = COMMENT_OWNER,
                 itemId = MENU_FAKE_COMMENT_ID,
-                title = "伪评论[H]",
+                title = "伪评论[W]",
                 titleProvider = {
                     menuTitle(
                         prefs.getString(MomentsFakeInteractionSettings.KEY_FAKE_COMMENT_MENU_TEXT, ""),

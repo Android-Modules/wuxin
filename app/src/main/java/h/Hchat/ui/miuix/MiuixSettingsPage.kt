@@ -39,7 +39,7 @@ import android.widget.TimePicker
 import android.widget.Toast
 import android.widget.VideoView
 import h.Hchat.BuildConfig
-import com.Johnny.wcx.R
+import h.Hchat.R
 import h.Hchat.crash.CrashReportRuntime
 import h.Hchat.crash.CrashReportSettings
 import h.Hchat.crash.CrashReportSettingsProvider
@@ -3804,8 +3804,8 @@ private fun featureSubSearchTerms(featureId: String): List<String> {
             "私聊防撤回", "群聊防撤回", "公众号防撤回", "撤回提示", "自定义撤回提示", "发送时间", "撤回时间", "时间格式", "语音防撤回", "图片防撤回", "视频防撤回"
         )
         MultiRecallFeature.ID -> listOf("多选撤回", "批量撤回", "多选消息", "分享菜单", "撤回自己消息")
-        MessageForwardFeature.ID -> listOf("转发", "转发[H]", "朋友圈", "好友", "分享", "群发助手", "好友标签", "朋友圈转发", "个人主页朋友圈")
-        SelectedMessagesFeature.ID -> listOf("群发助手", "群发助手[H]", "定时转发[H]", "多选消息", "定时转发", "模块群发", "微信原生群发助手", "群发助手间隔延迟", "群发间隔延迟")
+        MessageForwardFeature.ID -> listOf("转发", "转发[W]", "朋友圈", "好友", "分享", "群发助手", "好友标签", "朋友圈转发", "个人主页朋友圈")
+        SelectedMessagesFeature.ID -> listOf("群发助手", "群发助手[W]", "定时转发[W]", "多选消息", "定时转发", "模块群发", "微信原生群发助手", "群发助手间隔延迟", "群发间隔延迟")
         AutoReplyFeature.ID -> listOf(
             "自动回复规则", "任意消息", "关键词", "正则", "艾特我", "@我", "艾特全体", "@所有人", "回复步骤", "延迟回复",
             "回复冷却时间", "冷却秒数", "最大回复次数",
@@ -3914,9 +3914,9 @@ private fun featureSubSearchTerms(featureId: String): List<String> {
         SnsAntiRecallFeature.ID -> listOf(
             "朋友圈防撤回", "朋友圈评论防撤回", "评论防撤回", "已删除标签", "自定义撤回提示", "评论撤回提示", "提示开关", "三天可见", "个人主页朋友圈", "发现页朋友圈", "强制旧版个人主页朋友圈"
         )
-        MomentsFakeLikeSettingsProvider.ID -> listOf("朋友圈伪集赞", "伪集赞[H]", "本地点赞", "使用非好友", "群成员", "随机排序", "自动勾选好友", "排除名单", "随机选择好友", "凭空生成点赞", "虚拟点赞人", "伪造点赞数量", "隐藏长按菜单", "自定义文本")
-        MomentsFakeCommentSettingsProvider.ID -> listOf("朋友圈伪评论", "伪评论[H]", "使用非好友", "群成员", "多选好友", "全选好友", "随机评论", "添加新评论", "评论池", "评论时间", "评论顺序", "隐藏长按菜单", "自定义文本", "清除伪评论")
-        MomentsFakeForwardSettingsProvider.ID -> listOf("朋友圈伪转发", "伪转发[H]", "本地朋友圈", "日期", "时间", "重复转发", "隐藏长按菜单", "自定义文本", "清空伪转发", "调试日志")
+        MomentsFakeLikeSettingsProvider.ID -> listOf("朋友圈伪集赞", "伪集赞[W]", "本地点赞", "使用非好友", "群成员", "随机排序", "自动勾选好友", "排除名单", "随机选择好友", "凭空生成点赞", "虚拟点赞人", "伪造点赞数量", "隐藏长按菜单", "自定义文本")
+        MomentsFakeCommentSettingsProvider.ID -> listOf("朋友圈伪评论", "伪评论[W]", "使用非好友", "群成员", "多选好友", "全选好友", "随机评论", "添加新评论", "评论池", "评论时间", "评论顺序", "隐藏长按菜单", "自定义文本", "清除伪评论")
+        MomentsFakeForwardSettingsProvider.ID -> listOf("朋友圈伪转发", "伪转发[W]", "本地朋友圈", "日期", "时间", "重复转发", "隐藏长按菜单", "自定义文本", "清空伪转发", "调试日志")
         RemoveMomentsAdsFeature.ID -> listOf("去除朋友圈广告", "朋友圈广告", "广告屏蔽")
         MessageBubbleFeature.ID -> listOf("消息气泡", "聊天气泡", "自定义气泡", "左侧气泡", "右侧气泡", "红包气泡", "转账气泡", "系统消息气泡", "浅色模式", "深色模式", "NinePatch", "九宫格")
         MessageTextColorFeature.ID -> listOf("消息文本颜色", "文字颜色", "聊天气泡文字", "取色器", "浅色模式", "深色模式")
@@ -4966,7 +4966,7 @@ private fun SelectedMessagesMainPage(
                         sp,
                         SelectedMessagesSettings.KEY_ENABLE,
                         "群发助手",
-                        "在多选消息菜单中显示群发助手[H]和定时转发[H]",
+                        "在多选消息菜单中显示群发助手[W]和定时转发[W]",
                         SelectedMessagesSettings.DEFAULT_ENABLE
                     )
                     SwitchRow(
@@ -5172,7 +5172,7 @@ private fun MessageForwardMiuixPage(
                         sp,
                         MessageForwardSettings.KEY_ENABLE,
                         "转发菜单",
-                        "在消息长按菜单中显示转发[H]",
+                        "在消息长按菜单中显示转发[W]",
                         MessageForwardSettings.DEFAULT_ENABLE
                     )
                     InsetDivider()
@@ -5180,7 +5180,7 @@ private fun MessageForwardMiuixPage(
                         sp,
                         MessageForwardSettings.KEY_MULTI_MOMENTS_ENABLE,
                         "多选转发到朋友圈",
-                        "在多选消息菜单中显示转发到朋友圈[H]",
+                        "在多选消息菜单中显示转发到朋友圈[W]",
                         MessageForwardSettings.DEFAULT_ENABLE
                     )
                 }
@@ -5192,7 +5192,7 @@ private fun MessageForwardMiuixPage(
                         sp,
                         MessageForwardSettings.KEY_FAVORITE_FORWARD_ENABLE,
                         "转发收藏",
-                        "长按收藏后显示转发[H]",
+                        "长按收藏后显示转发[W]",
                         MessageForwardSettings.DEFAULT_ENABLE
                     )
                 }
@@ -5204,7 +5204,7 @@ private fun MessageForwardMiuixPage(
                         sp,
                         MessageForwardSettings.KEY_SNS_FORWARD_ENABLE,
                         "朋友圈转发",
-                        "在发现页或好友个人主页长按朋友圈后显示转发[H]",
+                        "在发现页或好友个人主页长按朋友圈后显示转发[W]",
                         MessageForwardSettings.DEFAULT_ENABLE
                     )
                 }
@@ -23942,7 +23942,7 @@ private fun TextVoiceMainPage(
                     SwitchRow(
                         checked = playEnabled,
                         title = "文字转换语音播放",
-                        summary = "长按文字消息后选择“转语音播放[H]”"
+                        summary = "长按文字消息后选择“转语音播放[W]”"
                     ) {
                         playEnabled = it
                         sp.edit().putBoolean(TextVoiceSettings.KEY_PLAY_ENABLE, it).apply()

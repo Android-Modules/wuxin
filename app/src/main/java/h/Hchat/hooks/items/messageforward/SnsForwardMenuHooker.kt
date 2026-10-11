@@ -45,6 +45,6 @@ internal class SnsForwardMenuHooker(
     companion object {
         const val MENU_ITEM_ID = 0x4843534e
         private const val OWNER = "message_forward"
-        private const val MENU_TITLE = "转发[H]"
+        private const val MENU_TITLE = "转发[W]"
     }
 }

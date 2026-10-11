@@ -83,7 +83,7 @@ data class EditMessageUpdate(
 )
 
 object EditMessageRepository {
-    private const val MENU_EDIT_TITLE = "修改[H]"
+    private const val MENU_EDIT_TITLE = "修改[W]"
     private const val BACKUP_PREFIX = "msg_"
 
     fun isEnabled(context: Context?): Boolean {

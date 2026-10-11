@@ -1632,13 +1632,13 @@ private class MessageForwardHooker(
     )
 
     companion object {
-        private const val MENU_TITLE = "转发[H]"
+        private const val MENU_TITLE = "转发[W]"
         private const val MULTI_MOMENTS_MENU_ITEM_ID = 0x48434d50
-        private const val MULTI_MOMENTS_MENU_TITLE = "转发到朋友圈[H]"
+        private const val MULTI_MOMENTS_MENU_TITLE = "转发到朋友圈[W]"
         private const val FAVORITE_FORWARD_MENU_ITEM_ID = 0x48434641
-        private const val FAVORITE_FORWARD_MENU_TITLE = "转发[H]"
+        private const val FAVORITE_FORWARD_MENU_TITLE = "转发[W]"
         private const val FAVORITE_CLICK_DEDUP_MS = 1_500L
-        private const val SNS_FORWARD_MENU_TITLE = "转发[H]"
+        private const val SNS_FORWARD_MENU_TITLE = "转发[W]"
         private const val SNS_UPLOAD_ACTIVITY = "com.tencent.mm.plugin.sns.ui.SnsUploadUI"
         private const val MAX_MOMENTS_IMAGES = 9
         private val MOMENTS_VIDEO_TYPES = setOf(WeChatMessageTypes.VIDEO, 62)

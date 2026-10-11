@@ -1601,7 +1601,7 @@ private class SwipeQuoteAdapter(
         const val MSG_RETRANSMIT_UI = "com.tencent.mm.ui.transmit.MsgRetransmitUI"
         const val EXTRA_HCHAT_SILENT_REPEAT = "hchat_silent_repeat"
         const val MENU_REPEAT_ID = SingleMessageMenuLocator.HCHAT_REPEAT_MENU_ITEM_ID
-        const val MENU_REPEAT_TITLE = "复读[H]"
+        const val MENU_REPEAT_TITLE = "复读[W]"
         const val DEFAULT_VOICE_DURATION_MS = 1000
         val RECYCLER_VIEW_CLASSES = arrayOf(
             "androidx.recyclerview.widget.RecyclerView",

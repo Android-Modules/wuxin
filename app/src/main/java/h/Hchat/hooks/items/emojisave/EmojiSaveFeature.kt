@@ -327,7 +327,7 @@ private class EmojiSaveRuntime(
 
     private companion object {
         const val MENU_ITEM_ID = 0x48434553
-        const val MENU_TITLE = "保存[H]"
+        const val MENU_TITLE = "保存[W]"
         val MD5_REGEX = Regex("[0-9a-fA-F]{32}")
         val PNG_HEADER = byteArrayOf(
             0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
