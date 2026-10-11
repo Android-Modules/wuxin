@@ -649,11 +649,6 @@ fun ScriptPluginSettingsContent(
             )
         }
         SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
-            ActionRow("插件 Agent", "按需求生成或修改脚本插件") {
-                onOpenAgent()
-            }
-        }
-        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
             ActionRow("在线插件", "浏览、安装或上传社区脚本插件") {
                 onOpenMarket()
             }
