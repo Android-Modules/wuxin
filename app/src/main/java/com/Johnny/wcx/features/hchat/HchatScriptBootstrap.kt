@@ -11,6 +11,7 @@ import h.Hchat.hooks.api.core.WechatApiFeature
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.items.script.ScriptPluginFeature
+import h.Hchat.hooks.items.script.ScriptPluginSettingsProvider
 import h.Hchat.preferences.ConfigStore
 import h.Hchat.ui.UIRegistry
 import org.luckypray.dexkit.DexKitBridge
@@ -49,6 +50,15 @@ object HchatScriptBootstrap {
         installed = true
 
         runCatching {
+            // UI 兜底：无论 DexKit 是否初始化成功，都先确保脚本设置 provider 已注册，
+            // 否则 SettingsUI.showFeature 会直接返回 false，脚本设置页无法打开。
+            runCatching {
+                val registry = UIRegistry.get()
+                if (registry.getAllProviders().none { it.featureId() == ScriptPluginFeature.ID }) {
+                    registry.registerProvider(ScriptPluginSettingsProvider())
+                }
+            }.onFailure { WeLogger.e(TAG, "预注册脚本设置 provider 失败", it) }
+
             val hostContext = HostInfo.application
             val hostClassLoader = ClassLoaders.HOST
             val lpparam = Xp51HookEntry.getLoadPackageParam()
