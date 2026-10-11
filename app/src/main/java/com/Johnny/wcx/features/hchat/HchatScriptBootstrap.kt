@@ -4,15 +4,16 @@ import com.Johnny.wcx.loader.entry.xp51.Xp51HookEntry
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.reflection.ClassLoaders
-import com.Johnny.wcx.utils.reflection.DexKit
 import h.Hchat.dexkit.DexBridgeHolder
 import h.Hchat.dexkit.DexFinder
 import h.Hchat.event.EventBus
 import h.Hchat.hooks.api.core.WechatApiFeature
+import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.items.script.ScriptPluginFeature
 import h.Hchat.preferences.ConfigStore
 import h.Hchat.ui.UIRegistry
+import org.luckypray.dexkit.DexKitBridge
 
 /**
  * Hchat 脚本子系统在 WCX 中的引导层。
@@ -27,7 +28,9 @@ import h.Hchat.ui.UIRegistry
  *    「微信联系人数据库尚未就绪」。
  * 2. [ScriptPluginFeature] —— 脚本插件运行时本体（插件加载、菜单/消息 Hook 等）。
  *
- * 该引导应在主进程、DexKit 可用后调用一次（见 [com.Johnny.wcx.loader.startup.WeLauncher]）。
+ * 关键点：安装完必须调用 [DexInstallScheduler.markDexBridgeReady]，否则 BRIDGE 阶段
+ * 的延迟任务（含微信 API 的 `resolveAll()` 预热）永远不会执行，数据库始终不可用。
+ * 这一步在原项目中由 `FeatureManager.installAll` 尾部完成。
  */
 object HchatScriptBootstrap {
 
@@ -35,6 +38,10 @@ object HchatScriptBootstrap {
 
     @Volatile
     private var installed = false
+
+    /** 持有 DexKitBridge 强引用，避免被回收；该实例独立于 WCX 的懒加载/idle 机制，长期存活供脚本运行时使用。 */
+    @Volatile
+    private var dexKitBridgeRef: DexKitBridge? = null
 
     @Synchronized
     fun install() {
@@ -45,7 +52,10 @@ object HchatScriptBootstrap {
             val hostContext = HostInfo.application
             val hostClassLoader = ClassLoaders.HOST
             val lpparam = Xp51HookEntry.getLoadPackageParam()
-            val dexKitBridge = DexKit
+
+            val dexKitBridge = DexKitBridge.create(HostInfo.appInfo.sourceDir)
+            dexKitBridgeRef = dexKitBridge
+
             val dexFinder = DexFinder(dexKitBridge, hostClassLoader, hostContext)
             val dexBridgeHolder = DexBridgeHolder(
                 dexKitBridge,
@@ -72,7 +82,11 @@ object HchatScriptBootstrap {
             WechatApiFeature().install(context)
             ScriptPluginFeature().install(context)
 
-            WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature）")
+            // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
+            // （resolveAll + 数据库 API 解析），数据库才会就绪。
+            DexInstallScheduler.markDexBridgeReady()
+
+            WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
         }.onFailure {
             WeLogger.e(TAG, "Hchat 脚本子系统安装失败", it)
         }
