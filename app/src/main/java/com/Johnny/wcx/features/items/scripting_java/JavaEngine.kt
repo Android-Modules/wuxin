@@ -1397,7 +1397,7 @@ object JavaEngine {
                 ) {
                     return@BshMethod runCatchingBsh("getOfficialList") {
                         WeDatabaseApi.getOfficialAccounts().map {
-                            FriendInfo(it.wxId, it.nickname, "", "", "", "", "", "", "", 0, it.type)
+                            FriendInfo(it.wxId, it.nickname, "", "", "", "", "", "", "", 0, 0)
                         }
                     }.getOrDefault(emptyList<Any>())
                 })
