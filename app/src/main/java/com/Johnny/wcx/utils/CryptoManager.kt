@@ -10,8 +10,6 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import com.Johnny.wcx.utils.WeLogger
-import java.security.UnrecoverableKeyException
 
 object CryptoManager {
 
@@ -24,13 +22,7 @@ object CryptoManager {
     @RequiresApi(Build.VERSION_CODES.R)
     private fun getOrCreateSecretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).also { it.load(null) }
-        try {
-            keyStore.getKey(KEY_ALIAS, null)?.let { return it as SecretKey }
-        } catch (e: UnrecoverableKeyException) {
-            // 密钥损坏/失效（生物特征变更、系统升级、TEE 重置等）→ 删除后重建，避免直接崩溃
-            WeLogger.e("CryptoManager", "keystore entry unrecoverable, rebuilding", e)
-            runCatching { keyStore.deleteEntry(KEY_ALIAS) }
-        }
+        keyStore.getKey(KEY_ALIAS, null)?.let { return it as SecretKey }
 
         val keyGenerator =
             KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
@@ -68,14 +60,6 @@ object CryptoManager {
         val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), spec)
         return cipher
-    }
-
-    /** 删除 TEE 密钥（失效或用户重新加密时调用）。 */
-    @RequiresApi(Build.VERSION_CODES.R)
-    fun deleteKey() {
-        runCatching {
-            KeyStore.getInstance(KEYSTORE_PROVIDER).also { it.load(null) }.deleteEntry(KEY_ALIAS)
-        }.onFailure { WeLogger.e("CryptoManager", "deleteEntry failed", it) }
     }
 
     // Called after biometric success with the authorized cipher

@@ -1367,12 +1367,7 @@ object JavaEngine {
                     "getFriendList", emptyArray<Class<*>>()
                 ) {
                     return@BshMethod runCatchingBsh("getFriendList") {
-                        WeDatabaseApi.getFriends().map {
-                            FriendInfo(
-                                it.wxId, it.nickname, it.remarkName, "",
-                                it.avatarUrl, "", "", "", "", 0, it.type
-                            )
-                        }
+                        WeDatabaseApi.getFriends().map { FriendInfo(it) }
                     }.getOrDefault(emptyList<Any>())
                 })
 
@@ -1382,11 +1377,7 @@ object JavaEngine {
                     "getGroupList", emptyArray<Class<*>>()
                 ) {
                     return@BshMethod runCatchingBsh("getGroupList") {
-                        WeDatabaseApi.getGroups().map {
-                            GroupInfo(
-                                it.wxId, it.nickname, "", emptyList(), ""
-                            )
-                        }
+                        WeDatabaseApi.getGroups().map { GroupInfo(it) }
                     }.getOrDefault(emptyList<Any>())
                 })
 
@@ -1397,7 +1388,7 @@ object JavaEngine {
                 ) {
                     return@BshMethod runCatchingBsh("getOfficialList") {
                         WeDatabaseApi.getOfficialAccounts().map {
-                            FriendInfo(it.wxId, it.nickname, "", "", "", "", "", "", "", 0, 0)
+                            FriendInfo(it.wxId, "", "", it.nickname, 0, "", 0L)
                         }
                     }.getOrDefault(emptyList<Any>())
                 })

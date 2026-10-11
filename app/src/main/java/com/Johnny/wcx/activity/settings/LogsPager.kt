@@ -49,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.composables.icons.materialsymbols.MaterialSymbols
@@ -218,19 +217,21 @@ private fun parseCrashLog(text: String): List<CrashSection> {
 private fun shareLogFile(context: Context, file: Path) {
     val f = file.toFile()
     val authority = "${HostInfo.packageName}.external.fileprovider"
-    // 注意：不要回退为「把整份日志文本塞进 EXTRA_TEXT」。几 MB 的文本会触发
-    // Binder TransactionTooLarge，而设置界面运行在宿主(微信)进程内，会直接把微信搞崩。
-    val uri = runCatching { FileProvider.getUriForFile(context, authority, f) }.getOrNull()
-    if (uri == null) {
-        WeLogger.w(LOGS_TAG, "share log failed: FileProvider cannot serve ${f.absolutePath}")
-        Toast.makeText(context, "分享失败：无法获取日志文件，请改用「保存」", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, f.name)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val sendIntent = runCatching {
+        val uri = FileProvider.getUriForFile(context, authority, f)
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, f.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }.getOrElse {
+        WeLogger.w(LOGS_TAG, "FileProvider share failed, falling back to inline text", it)
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, f.name)
+            putExtra(Intent.EXTRA_TEXT, runCatching { file.readText() }.getOrDefault(""))
+        }
     }
     val chooser = Intent.createChooser(sendIntent, "分享日志")
         .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
