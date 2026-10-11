@@ -1016,6 +1016,16 @@ object MiuixSettingsPage {
     }
 
     @JvmStatic
+    fun showScriptPluginMarket(context: Context) {
+        show(context, DetailPage.ScriptPluginMarket(), floatingAgent = false)
+    }
+
+    @JvmStatic
+    fun showScriptPluginManager(context: Context) {
+        show(context, DetailPage.ScriptPluginManager(), floatingAgent = false)
+    }
+
+    @JvmStatic
     fun showFeature(context: Context, featureId: String): Boolean {
         val provider = UIRegistry.get().getAllProviders()
             .firstOrNull { it.featureId() == featureId }
@@ -2866,7 +2876,7 @@ private fun rememberPressFeedbackColor(pressed: Boolean): Color {
 }
 
 @Composable
-private fun HchatMiuixTheme(context: Context, content: @Composable () -> Unit) {
+internal fun HchatMiuixTheme(context: Context, content: @Composable () -> Unit) {
     val colors = if (isDarkMode(context)) {
         darkColorScheme()
     } else {
@@ -37424,7 +37434,7 @@ private fun ClickHintTag() {
     )
 }
 
-private object ScriptPluginSettingsMiuixContent {
+internal object ScriptPluginSettingsMiuixContent {
 
 @Composable
 fun ScriptPluginSettingsContent(
