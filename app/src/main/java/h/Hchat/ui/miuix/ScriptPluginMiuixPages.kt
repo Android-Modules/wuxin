@@ -81,6 +81,8 @@ import androidx.compose.ui.zIndex
 import h.Hchat.hooks.items.script.ScriptPluginManager
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.hooks.items.script.ScriptPluginSettings
+import h.Hchat.hooks.items.script.market.PluginMarketPlugin
+import h.Hchat.hooks.items.script.market.PluginMarketRepository
 import h.Hchat.preferences.HchatStorage
 import h.Hchat.preferences.TermsGate
 import h.Hchat.ui.FeatureSettingsProvider
@@ -2640,6 +2642,139 @@ internal fun PageScaffold(
     }
 }
 
+
+/**
+ * WCX 入口：在线插件市场页。
+ *
+ * 说明：UI 为 WCX 自写，底层直接调用仓内已内置的市场客户端
+ * （[PluginMarketRepository]），服务端地址沿用 Hchat 的
+ * `https://hchat.103.97.179.142.sslip.io`（见 PluginMarketSettings.DEFAULT_SERVICE_URL）。
+ */
+@Composable
+fun ScriptPluginMarketTabPage(
+    context: Context,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val scrollBehavior = MiuixScrollBehavior()
+    var loading by remember { mutableStateOf(true) }
+    var errorText by remember { mutableStateOf("") }
+    var plugins by remember { mutableStateOf<List<PluginMarketPlugin>>(emptyList()) }
+    var installingId by remember { mutableStateOf("") }
+    var refreshVersion by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshVersion) {
+        loading = true
+        errorText = ""
+        val result = withContext(Dispatchers.IO) {
+            PluginMarketRepository.list(context, "", "latest")
+        }
+        result.fold(
+            onSuccess = { page -> plugins = page.items },
+            onFailure = { errorText = it.message ?: "加载失败" }
+        )
+        loading = false
+    }
+
+    fun install(plugin: PluginMarketPlugin) {
+        if (installingId.isNotEmpty()) return
+        installingId = plugin.remotePluginId
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.downloadAndInstall(context, plugin.remotePluginId)
+            }
+            result.fold(
+                onSuccess = {
+                    Toast.makeText(context, "已安装：${plugin.name}", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = {
+                    Toast.makeText(context, "安装失败：${it.message}", Toast.LENGTH_LONG).show()
+                }
+            )
+            installingId = ""
+            refreshVersion++
+        }
+    }
+
+    PageScaffold(
+        title = "在线插件",
+        largeTitle = "在线插件",
+        scrollBehavior = scrollBehavior,
+        onBack = onBack,
+        bottomBar = { BottomActionBar("返回", onBack) }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+            state = listState,
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 84.dp
+            )
+        ) {
+            when {
+                loading -> {
+                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件") }
+                    item { EmptyText("正在从市场加载插件…") }
+                }
+                errorText.isNotEmpty() -> {
+                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "加载失败") }
+                    item { EmptyText(errorText) }
+                    item {
+                        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+                            ActionRow("重试", "重新从市场拉取插件列表") { refreshVersion++ }
+                        }
+                    }
+                }
+                plugins.isEmpty() -> {
+                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件") }
+                    item { EmptyText("市场暂无插件") }
+                }
+                else -> {
+                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件(${plugins.size})") }
+                    items(plugins, key = { it.remotePluginId }) { plugin ->
+                        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = plugin.name,
+                                    fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                                    fontWeight = FontWeight.Medium,
+                                    color = BasicComponentDefaults.titleColor().color,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "作者: ${plugin.author.ifBlank { "未知" }} | 版本: ${plugin.version}",
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = BasicComponentDefaults.summaryColor().color,
+                                )
+                                Text(
+                                    text = "下载 ${plugin.downloadCount} · 点赞 ${plugin.likeCount} · 评论 ${plugin.commentCount}",
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = BasicComponentDefaults.summaryColor().color,
+                                )
+                                if (plugin.description.isNotBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = plugin.description,
+                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                        color = BasicComponentDefaults.summaryColor().color,
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                TextButton(
+                                    text = if (installingId == plugin.remotePluginId) "安装中…" else "安装",
+                                    onClick = { install(plugin) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /** WCX 入口：脚本 Tab 内容（Hchat 脚本页主体 + WCX 本地组件）。 */
 @Composable

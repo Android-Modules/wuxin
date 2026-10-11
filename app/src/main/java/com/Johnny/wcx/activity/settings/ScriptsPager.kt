@@ -13,31 +13,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.Johnny.wcx.utils.android.showToast
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.ui.miuix.ScriptPluginManagerTabPage
+import h.Hchat.ui.miuix.ScriptPluginMarketTabPage
 import h.Hchat.ui.miuix.ScriptPluginMiuixTabContent
 import h.Hchat.ui.miuix.ScriptPluginReadmeTabDialog
 
 /**
- * 「脚本」独立页 —— 采用 Hchat 同款 Miuix 脚本页：
- * 插件总开关 / 插件列表（启用开关 + 操作菜单）/ 插件管理页 / README 弹窗。
- *
- * 数据与逻辑全部走已迁移的 Hchat 脚本子系统（ScriptPluginRuntime / ScriptPluginManager）。
+ * 「脚本」独立页 —— WCX 专属脚本插件中心：
+ * 插件总开关 / 插件列表（启用开关 + 操作菜单）/ 本地插件管理页 / 在线插件市场 / README 弹窗。
+ * 数据与逻辑走已内置的脚本子系统（ScriptPluginRuntime / ScriptPluginManager / PluginMarketRepository）。
  */
 @Composable
 fun ScriptsPager() {
     val context = LocalContext.current
     var showManager by remember { mutableStateOf(false) }
+    var showMarket by remember { mutableStateOf(false) }
     var readmePlugin by remember { mutableStateOf<ScriptPluginRuntime.ScriptPlugin?>(null) }
 
-    if (showManager) {
-        ScriptPluginManagerTabPage(
-            context = context,
-            onBack = { showManager = false },
-        )
-    } else {
-        MiuixListScaffold(title = "脚本", blurTopBar = false) {
+    when {
+        showMarket -> ScriptPluginMarketTabPage(context = context, onBack = { showMarket = false })
+        showManager -> ScriptPluginManagerTabPage(context = context, onBack = { showManager = false })
+        else -> MiuixListScaffold(title = "脚本", blurTopBar = false) {
             item {
                 // 父级 Pager 与内层 TopAppBar 各有一层 backdrop；内容滚动越界会被采样成顶部灰块，这里裁剪掉溢出绘制。
                 Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
@@ -45,8 +42,7 @@ fun ScriptsPager() {
                         context = context,
                         onOpenManager = { showManager = true },
                         onOpenReadme = { plugin -> readmePlugin = plugin },
-                        onOpenMarket = { showToast("插件市场：迁移中") },
-                        onOpenAgent = { showToast("脚本 Agent：迁移中") },
+                        onOpenMarket = { showMarket = true },
                     )
                 }
             }
