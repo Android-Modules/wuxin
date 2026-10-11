@@ -79,12 +79,15 @@ object HchatScriptBootstrap {
                 UIRegistry.get()
             )
 
-            WechatApiFeature().install(context)
-            ScriptPluginFeature().install(context)
+            runCatching { WechatApiFeature().install(context) }
+                .onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
+            runCatching { ScriptPluginFeature().install(context) }
+                .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
-            // （resolveAll + 数据库 API 解析），数据库才会就绪。
-            DexInstallScheduler.markDexBridgeReady()
+            // （resolveAll + 数据库 API 解析），数据库才会就绪。无论前面是否局部失败都要执行。
+            runCatching { DexInstallScheduler.markDexBridgeReady() }
+                .onFailure { WeLogger.e(TAG, "markDexBridgeReady 失败", it) }
 
             WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
         }.onFailure {
