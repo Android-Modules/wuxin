@@ -57,7 +57,7 @@ class ScriptPluginBridge internal constructor(
             current.getAndSet(null)?.let {
                 runCatching { it.accept(value) }
                     .onFailure { error ->
-                        h.Hchat.utils.HLog.e("[Hchat:Script] 对话框回调失败: ${error.message}", error)
+                        h.Hchat.utils.HLog.e("[WCX:Script] 对话框回调失败: ${error.message}", error)
                     }
             }
         }
@@ -68,19 +68,19 @@ class ScriptPluginBridge internal constructor(
     }
 
     fun log(message: Any?) {
-        XposedBridge.log("[Hchat:Script] ${message ?: "null"}")
+        XposedBridge.log("[WCX:Script] ${message ?: "null"}")
     }
 
     fun log(pluginName: String?, pluginDir: File?, message: Any?) {
         val text = message?.toString() ?: "null"
-        XposedBridge.log("[Hchat:Script] [${pluginName.orEmpty()}] $text")
+        XposedBridge.log("[WCX:Script] [${pluginName.orEmpty()}] $text")
         val dir = pluginDir ?: return
         runCatching {
             if (!dir.isDirectory) dir.mkdirs()
             val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
             File(dir, "log.txt").appendText("[$time] $text\n")
         }.onFailure {
-            h.Hchat.utils.HLog.e("[Hchat:Script] 写入插件日志失败: ${pluginName.orEmpty()} ${it.message}", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] 写入插件日志失败: ${pluginName.orEmpty()} ${it.message}", it)
         }
     }
 
@@ -350,7 +350,7 @@ class ScriptPluginBridge internal constructor(
                 runCatching { callback.accept(activity) }
                     .onFailure {
                         h.Hchat.utils.HLog.e(
-                            "[Hchat:Script] 加号菜单回调失败: ${pluginId.orEmpty()} ${it.message}",
+                            "[WCX:Script] 加号菜单回调失败: ${pluginId.orEmpty()} ${it.message}",
                             it
                         )
                     }
@@ -377,7 +377,7 @@ class ScriptPluginBridge internal constructor(
                 runCatching { callback.accept(message) }
                     .onFailure {
                         h.Hchat.utils.HLog.e(
-                            "[Hchat:Script] 长按消息菜单回调失败: ${pluginId.orEmpty()} ${it.message}",
+                            "[WCX:Script] 长按消息菜单回调失败: ${pluginId.orEmpty()} ${it.message}",
                             it
                         )
                     }
@@ -602,7 +602,7 @@ class ScriptPluginBridge internal constructor(
             synchronized(callbacks) { callbacks.forEach { it.clear() } }
         }
         runCatching { ScriptMenuDispatcher.unregisterOwner(pluginId) }.onFailure {
-            h.Hchat.utils.HLog.e("[Hchat:Script] 清理插件菜单失败: $pluginId", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] 清理插件菜单失败: $pluginId", it)
         }
         pluginFloatingBars.remove(pluginId)?.let { handles ->
             runCatching {
@@ -611,12 +611,12 @@ class ScriptPluginBridge internal constructor(
                     true
                 }
             }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 恢复插件悬浮栏失败: $pluginId", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 恢复插件悬浮栏失败: $pluginId", it)
             }
         }
         for (hook in pluginHooks.remove(pluginId).orEmpty()) {
             runCatching { HookRegistry.get().unhook(hook) }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 解除插件 Hook 失败: $pluginId", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 解除插件 Hook 失败: $pluginId", it)
             }
         }
     }
@@ -701,7 +701,7 @@ class ScriptPluginBridge internal constructor(
                     }
                 }
             }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 读取插件配置失败: ${pluginDir?.name.orEmpty()} ${it.message}", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 读取插件配置失败: ${pluginDir?.name.orEmpty()} ${it.message}", it)
             }
         }
         return properties
@@ -723,7 +723,7 @@ class ScriptPluginBridge internal constructor(
                     }
                 }
             }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 写入插件配置失败: ${pluginDir?.name.orEmpty()} ${it.message}", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 写入插件配置失败: ${pluginDir?.name.orEmpty()} ${it.message}", it)
             }
         }
     }
@@ -769,7 +769,7 @@ class ScriptPluginBridge internal constructor(
         val show = Runnable {
             if (activity.isFinishing || activity.isDestroyed) return@Runnable
             runCatching { action(activity) }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 显示模块弹窗失败: ${it.message}", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 显示模块弹窗失败: ${it.message}", it)
             }
         }
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -783,7 +783,7 @@ class ScriptPluginBridge internal constructor(
     private fun <T> callOnMainForResult(action: () -> T?): T? {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return runCatching(action).onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 执行模块悬浮底栏操作失败: ${it.message}", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 执行模块悬浮底栏操作失败: ${it.message}", it)
             }.getOrNull()
         }
         val pending = 0
@@ -822,9 +822,9 @@ class ScriptPluginBridge internal constructor(
                 mainHandler.removeCallbacks(task)
                 if (interrupted) {
                     Thread.currentThread().interrupt()
-                    h.Hchat.utils.HLog.e("[Hchat:Script] 等待模块悬浮底栏操作被中断")
+                    h.Hchat.utils.HLog.e("[WCX:Script] 等待模块悬浮底栏操作被中断")
                 } else {
-                    h.Hchat.utils.HLog.e("[Hchat:Script] 执行模块悬浮底栏操作超时")
+                    h.Hchat.utils.HLog.e("[WCX:Script] 执行模块悬浮底栏操作超时")
                 }
                 return null
             }
@@ -840,7 +840,7 @@ class ScriptPluginBridge internal constructor(
             Thread.currentThread().interrupt()
         }
         error.get()?.let {
-            h.Hchat.utils.HLog.e("[Hchat:Script] 执行模块悬浮底栏操作失败: ${it.message}", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] 执行模块悬浮底栏操作失败: ${it.message}", it)
             return null
         }
         return result.get()
@@ -859,7 +859,7 @@ class ScriptPluginBridge internal constructor(
 
     private fun <T> dispatchDialogCallback(callback: Consumer<T>?, value: T) {
         runCatching { callback?.accept(value) }.onFailure {
-            h.Hchat.utils.HLog.e("[Hchat:Script] 模块弹窗回调失败: ${it.message}", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] 模块弹窗回调失败: ${it.message}", it)
         }
     }
 

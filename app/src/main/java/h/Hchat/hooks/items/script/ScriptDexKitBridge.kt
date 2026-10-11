@@ -36,7 +36,7 @@ class ScriptDexKitBridge internal constructor(
             }
             ArrayList(out)
         }.onFailure {
-            h.Hchat.utils.HLog.e("[Hchat:Script] DexKit查找类失败: ${it.message}", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] DexKit查找类失败: ${it.message}", it)
         }.getOrDefault(emptyList())
     }
 
@@ -63,7 +63,7 @@ class ScriptDexKitBridge internal constructor(
             }
             ArrayList(out)
         }.onFailure {
-            h.Hchat.utils.HLog.e("[Hchat:Script] DexKit查找成员失败: ${it.message}", it)
+            h.Hchat.utils.HLog.e("[WCX:Script] DexKit查找成员失败: ${it.message}", it)
         }.getOrDefault(emptyList())
     }
 

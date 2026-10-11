@@ -7,6 +7,9 @@ import android.os.Looper
 import android.text.TextUtils
 import h.Hchat.hooks.api.contact.WeChatContactApi
 import h.Hchat.hooks.api.core.WeChatApis
+import h.Hchat.utils.HLog
+import com.Johnny.wcx.features.api.core.WeContactApi
+import com.Johnny.wcx.features.items.system.servers.WeChatService
 import h.Hchat.hooks.api.media.WeChatFavoriteItem
 import h.Hchat.hooks.api.media.WeChatMediaApi
 import h.Hchat.hooks.api.model.ContactLabelBean
@@ -22,6 +25,7 @@ import h.Hchat.utils.HchatMediaDownloader
 import me.hd.wauxv.data.bean.MsgInfoBean
 import me.hd.wauxv.data.bean.info.FriendInfo
 import me.hd.wauxv.data.bean.info.GroupInfo
+import me.hd.wauxv.data.bean.info.GroupData
 import me.hd.wauxv.plugin.api.callback.PluginCallBack
 import me.yun.silk.SilkCodec
 import okhttp3.MediaType.Companion.toMediaType
@@ -109,17 +113,13 @@ class ScriptWaBridge @JvmOverloads internal constructor(
     fun getFriendList(): List<FriendInfo> {
         return rawFriendList().map { contact ->
             FriendInfo(
-                contact.wxId,
-                contact.nickname,
-                contact.remarkName,
-                contact.customWxId,
-                contact.avatarUrl,
-                contact.avatarBackupUrl,
-                contact.encryptedUsername,
-                contact.province,
-                contact.city,
-                contact.gender,
-                contact.type
+                wxid = contact.wxId,
+                alias = contact.customWxId,
+                remark = contact.remarkName,
+                nickname = contact.nickname,
+                type = contact.type,
+                sourceExtInfo = contact.encryptedUsername,
+                createTime = 0L
             )
         }
     }
@@ -160,13 +160,16 @@ class ScriptWaBridge @JvmOverloads internal constructor(
             val contact = groupContacts[chatroom.chatroomId]
             val groupName = firstNotBlank(chatroom.name, contact?.nickname, chatroom.chatroomId)
             GroupInfo(
-                chatroom.chatroomId,
-                groupName,
-                firstNotBlank(contact?.nickname, groupName),
-                contact?.remarkName.orEmpty(),
-                chatroom.owner,
-                chatroom.memberIds,
-                chatroom.rawDisplayNames
+                roomId = chatroom.chatroomId,
+                remark = contact?.remarkName.orEmpty(),
+                name = groupName,
+                groupData = GroupData(
+                    roomId = chatroom.chatroomId,
+                    memberIds = (chatroom.memberIds as? List<*>)?.mapNotNull { it?.toString() }.orEmpty(),
+                    memberNames = (chatroom.rawDisplayNames as? List<*>)?.mapNotNull { it?.toString() }.orEmpty(),
+                    memberCount = (chatroom.memberIds as? List<*>)?.size ?: 0,
+                    owner = chatroom.owner?.toString().orEmpty()
+                )
             )
         }
     }
@@ -283,14 +286,15 @@ class ScriptWaBridge @JvmOverloads internal constructor(
         return WeChatApis.contact().contacts()?.modifyContactLabelList(username, labelNames) == true
     }
 
-    fun verifyUser(wxid: String?, ticket: String?, scene: Int): Boolean {
-        val verifyUsername = ScriptNewFriendHook.resolveVerifyUsername(wxid, ticket, scene)
-        return WeChatApis.contact().verifyUser()?.verifyUser(verifyUsername, ticket, scene) == true
-    }
+    fun verifyUser(wxid: String?, ticket: String?, scene: Int): Boolean =
+        verifyUser(wxid, ticket, scene, 0)
 
     fun verifyUser(wxid: String?, ticket: String?, scene: Int, privacy: Int): Boolean {
-        val verifyUsername = ScriptNewFriendHook.resolveVerifyUsername(wxid, ticket, scene)
-        return WeChatApis.contact().verifyUser()?.verifyUser(verifyUsername, ticket, scene, privacy) == true
+        val verifyUsername = ScriptNewFriendHook.resolveVerifyUsername(wxid, ticket, scene) ?: return false
+        return runCatching {
+            WeContactApi.verifyUser(verifyUsername, ticket.orEmpty(), scene, privacy)
+            true
+        }.getOrDefault(false)
     }
 
     fun getGroupMemberList(groupWxid: String?): List<String> {
@@ -908,12 +912,14 @@ class ScriptWaBridge @JvmOverloads internal constructor(
     }
 
     fun insertSystemMsg(talker: String?, content: String?, createTime: Long): Long {
-        return runCatching {
-            WeChatApis.message().local()?.insertSystemMessage(talker, content, createTime) ?: 0L
-        }.getOrDefault(0L)
+        if (talker.isNullOrBlank() || content.isNullOrEmpty()) return 0L
+        // TODO(migration): WCX 现有插入接口不返回新消息 id，成功时统一返回 0；需要 msgId 时应扩展 WeMessageApi。
+        runCatching { WeChatService.insertSystemMessage(talker, content, createTime) }
+            .onFailure { HLog.e("ScriptWaBridge insertSystemMsg 失败", it) }
+        return 0L
     }
 
-    fun queryHistoryMsg(talker: String?, startTime: Long, count: Int): List<MsgInfoBean> {
+    fun queryHistoryMsg(talker: String?, startTime: Long, count: Int): List<ScriptMessageBean> {
         if (talker.isNullOrBlank()) return emptyList()
         return WeChatApis.message().store()
             ?.queryHistoryMsg(talker, startTime, count)

@@ -59,7 +59,7 @@ object ScriptMessageHook {
         try {
             changeApi.install()
         } catch (t: Throwable) {
-            HLog.e("[Hchat:Script] 消息监听安装失败: ${t.message}", t)
+            HLog.e("[WCX:Script] 消息监听安装失败: ${t.message}", t)
             return false
         }
         if (!changeApi.isInstalled) return false
@@ -106,7 +106,7 @@ object ScriptMessageHook {
                 try {
                     dispatch.run()
                 } catch (t: Throwable) {
-                    HLog.e("[Hchat:Script] 消息监听异步分发失败: ${t.message}", t)
+                    HLog.e("[WCX:Script] 消息监听异步分发失败: ${t.message}", t)
                 }
             }
         } catch (_: RejectedExecutionException) {
@@ -116,7 +116,7 @@ object ScriptMessageHook {
             if (nowMs >= nextLogAtMs &&
                 nextOverflowLogAtMs.compareAndSet(nextLogAtMs, nowMs + OVERFLOW_LOG_INTERVAL_MS)
             ) {
-                HLog.e("[Hchat:Script] 消息分发队列已满，累计丢弃 $dropped 个新事件")
+                HLog.e("[WCX:Script] 消息分发队列已满，累计丢弃 $dropped 个新事件")
             }
         }
     }
@@ -142,11 +142,11 @@ object ScriptMessageHook {
                         ScriptPluginRuntime.dispatchOnFinderMediaDownload(stableMessage)
                     }
                 } catch (t: Throwable) {
-                    HLog.e("[Hchat:Script] 媒体消息异步分发失败: ${t.message}", t)
+                    HLog.e("[WCX:Script] 媒体消息异步分发失败: ${t.message}", t)
                 }
             }
         } catch (_: RejectedExecutionException) {
-            HLog.e("[Hchat:Script] 媒体消息补查队列已满，已丢弃新事件")
+            HLog.e("[WCX:Script] 媒体消息补查队列已满，已丢弃新事件")
         }
     }
 

@@ -41,7 +41,7 @@ internal class ScriptDelayScope(
                 if (delayDropLogAt == 0L || now - delayDropLogAt >= DELAY_DROP_LOG_COOLDOWN_MS) {
                     delayDropLogAt = now
                     h.Hchat.utils.HLog.e(
-                        "[Hchat:Script] 延迟任务队列已满: ${pluginName()}，累计丢弃 $droppedDelays 项"
+                        "[WCX:Script] 延迟任务队列已满: ${pluginName()}，累计丢弃 $droppedDelays 项"
                     )
                 }
                 return
@@ -58,7 +58,7 @@ internal class ScriptDelayScope(
                 }
             } catch (error: Throwable) {
                 task.cancelLocked()
-                h.Hchat.utils.HLog.e("[Hchat:Script] 提交延迟任务失败: ${error.message}", error)
+                h.Hchat.utils.HLog.e("[WCX:Script] 提交延迟任务失败: ${error.message}", error)
             }
         }
     }
@@ -86,7 +86,7 @@ internal class ScriptDelayScope(
             runCatching {
                 callback.run()
             }.onFailure {
-                h.Hchat.utils.HLog.e("[Hchat:Script] 延迟任务失败: ${it.message}", it)
+                h.Hchat.utils.HLog.e("[WCX:Script] 延迟任务失败: ${it.message}", it)
             }
         }
 

@@ -14,7 +14,7 @@ import org.luckypray.dexkit.DexKitBridge;
  */
 public final class DexBridgeHolder {
 
-    private static final String TAG = "[Hchat:DexBridgeHolder]";
+    private static final String TAG = "[WCX:DexBridgeHolder]";
 
     private final DexKitBridge dexKitBridge;
     private final DexFinder dexFinder;

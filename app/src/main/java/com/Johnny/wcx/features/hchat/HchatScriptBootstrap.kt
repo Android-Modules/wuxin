@@ -11,7 +11,7 @@ import h.Hchat.hooks.api.core.WechatApiFeature
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.items.script.ScriptPluginFeature
-import h.Hchat.hooks.items.script.ScriptPluginSettingsProvider
+import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.preferences.ConfigStore
 import h.Hchat.ui.UIRegistry
 import org.luckypray.dexkit.DexKitBridge
@@ -37,6 +37,10 @@ object HchatScriptBootstrap {
 
     private const val TAG = "HchatScriptBootstrap"
 
+    /** 就绪自检总时长与轮询间隔。 */
+    private const val READINESS_TIMEOUT_MS = 60_000L
+    private const val READINESS_POLL_INTERVAL_MS = 2_000L
+
     @Volatile
     private var installed = false
 
@@ -50,15 +54,6 @@ object HchatScriptBootstrap {
         installed = true
 
         runCatching {
-            // UI 兜底：无论 DexKit 是否初始化成功，都先确保脚本设置 provider 已注册，
-            // 否则 SettingsUI.showFeature 会直接返回 false，脚本设置页无法打开。
-            runCatching {
-                val registry = UIRegistry.get()
-                if (registry.getAllProviders().none { it.featureId() == ScriptPluginFeature.ID }) {
-                    registry.registerProvider(ScriptPluginSettingsProvider())
-                }
-            }.onFailure { WeLogger.e(TAG, "预注册脚本设置 provider 失败", it) }
-
             val hostContext = HostInfo.application
             val hostClassLoader = ClassLoaders.HOST
             val lpparam = Xp51HookEntry.getLoadPackageParam()
@@ -89,20 +84,13 @@ object HchatScriptBootstrap {
                 UIRegistry.get()
             )
 
-            // 注意：必须先 onInit（触发 onFeatureInit / registerSettingsProvider），再 install。
-            // Hchat 原项目中这一步由 FeatureManager.installAll 完成；漏掉 onInit 会导致
-            // UIRegistry 中缺少 script_plugin 的 settings provider，脚本设置页无法打开。
-            val apiFeature = WechatApiFeature()
-            runCatching { apiFeature.onInit(context) }
-                .onFailure { WeLogger.e(TAG, "WechatApiFeature 初始化失败", it) }
-            runCatching { apiFeature.install(context) }
-                .onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
-
-            val scriptFeature = ScriptPluginFeature()
-            runCatching { scriptFeature.onInit(context) }
-                .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 初始化失败", it) }
-            runCatching { scriptFeature.install(context) }
-                .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
+            // 与 Hchat 的 FeatureManager.installAll 保持一致：先 onInit（注册设置 provider 等），再 install。
+            runCatching {
+                WechatApiFeature().also { it.onInit(context) }.install(context)
+            }.onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
+            runCatching {
+                ScriptPluginFeature().also { it.onInit(context) }.install(context)
+            }.onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
             // （resolveAll + 数据库 API 解析），数据库才会就绪。无论前面是否局部失败都要执行。
@@ -110,6 +98,24 @@ object HchatScriptBootstrap {
                 .onFailure { WeLogger.e(TAG, "markDexBridgeReady 失败", it) }
 
             WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
+
+            // 就绪自检：把最终结果写进 WCX 日志，避免「总开关一直提示未就绪」时无从定位。
+            Thread({
+                val startedAt = System.currentTimeMillis()
+                var detail: String? = "自检未开始"
+                while (System.currentTimeMillis() - startedAt < READINESS_TIMEOUT_MS) {
+                    detail = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }
+                        .getOrElse { it.message ?: "自检异常" }
+                    if (detail == null) break
+                    Thread.sleep(READINESS_POLL_INTERVAL_MS)
+                }
+                val elapsed = System.currentTimeMillis() - startedAt
+                if (detail == null) {
+                    WeLogger.i(TAG, "脚本运行时就绪：微信数据库可用（耗时 ${elapsed}ms）")
+                } else {
+                    WeLogger.e(TAG, "脚本运行时未就绪（自检 ${elapsed}ms）：$detail")
+                }
+            }, "WCX-Script-SelfCheck").apply { isDaemon = true }.start()
         }.onFailure {
             WeLogger.e(TAG, "Hchat 脚本子系统安装失败", it)
         }

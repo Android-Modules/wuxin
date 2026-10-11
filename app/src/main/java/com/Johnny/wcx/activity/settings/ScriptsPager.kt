@@ -1,58 +1,63 @@
 package com.Johnny.wcx.activity.settings
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
-import h.Hchat.ui.SettingsUI
-import h.Hchat.ui.miuix.HchatMiuixTheme
-import h.Hchat.ui.miuix.ScriptPluginSettingsMiuixContent
+import h.Hchat.ui.miuix.ScriptPluginManagerTabPage
+import h.Hchat.ui.miuix.ScriptPluginMarketTabPage
+import h.Hchat.ui.miuix.ScriptPluginMiuixTabContent
+import h.Hchat.ui.miuix.ScriptPluginReadmeTabDialog
 
 /**
- * 「脚本」页。
- *
- * 直接内嵌渲染 Hchat 的脚本插件内容页（与 Hchat 主设置页的「脚本插件」Tab 一致）：
- * 插件总开关 + 本地插件列表 + 插件 Agent / 在线插件 / 本地插件管理入口。
- *
- * 点击「插件 Agent / 在线插件 / 本地插件管理」时，以 Hchat 的浮层页形式打开对应子页面。
+ * 「脚本」独立页 —— WCX 专属脚本插件中心：
+ * 插件总开关 / 插件列表（启用开关 + 操作菜单）/ 本地插件管理页 / 在线插件市场 / README 弹窗。
+ * 数据与逻辑走已内置的脚本子系统（ScriptPluginRuntime / ScriptPluginManager / PluginMarketRepository）。
  */
 @Composable
 fun ScriptsPager() {
     val context = LocalContext.current
+    var showManager by remember { mutableStateOf(false) }
+    var showMarket by remember { mutableStateOf(false) }
     var readmePlugin by remember { mutableStateOf<ScriptPluginRuntime.ScriptPlugin?>(null) }
 
-    HchatMiuixTheme(context) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
-                context = context,
-                onOpenReadme = { readmePlugin = it },
-                onOpenMarket = { SettingsUI.showScriptPluginMarket(context) },
-                onOpenAgent = { SettingsUI.showScriptPluginAgent(context) },
-                onOpenManager = { SettingsUI.showScriptPluginManager(context) }
-            )
+    when {
+        showMarket -> ScriptPluginMarketTabPage(context = context, onBack = { showMarket = false })
+        showManager -> ScriptPluginManagerTabPage(context = context, onBack = { showManager = false })
+        else -> MiuixListScaffold(title = "脚本", blurTopBar = false) {
+            item {
+                // 父级 Pager 与内层 TopAppBar 各有一层 backdrop；内容滚动越界会被采样成顶部灰块，这里裁剪掉溢出绘制。
+                Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+                    ScriptPluginMiuixTabContent(
+                        context = context,
+                        onOpenManager = { showManager = true },
+                        onOpenReadme = { plugin -> readmePlugin = plugin },
+                        onOpenMarket = { showMarket = true },
+                    )
+                }
+            }
+            item {
+                Spacer(Modifier.height(CONTENT_BOTTOM_INSET))
+            }
         }
+    }
 
-        readmePlugin?.let { plugin ->
-            ScriptPluginSettingsMiuixContent.ScriptPluginReadmeDialog(
-                context = context,
-                plugin = plugin,
-                onClose = { readmePlugin = null }
-            )
-        }
+    val pending = readmePlugin
+    if (pending != null) {
+        ScriptPluginReadmeTabDialog(
+            context = context,
+            plugin = pending,
+            onClose = { readmePlugin = null },
+        )
     }
 }
