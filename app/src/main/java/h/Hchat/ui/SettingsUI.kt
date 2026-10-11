@@ -15,6 +15,16 @@ object SettingsUI {
     }
 
     @JvmStatic
+    fun showScriptPluginMarket(context: Context) {
+        MiuixSettingsPage.showScriptPluginMarket(context)
+    }
+
+    @JvmStatic
+    fun showScriptPluginManager(context: Context) {
+        MiuixSettingsPage.showScriptPluginManager(context)
+    }
+
+    @JvmStatic
     fun showFeature(context: Context, featureId: String): Boolean {
         return MiuixSettingsPage.showFeature(context, featureId)
     }
