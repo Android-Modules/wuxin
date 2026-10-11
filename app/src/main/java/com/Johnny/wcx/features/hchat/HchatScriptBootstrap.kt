@@ -79,9 +79,19 @@ object HchatScriptBootstrap {
                 UIRegistry.get()
             )
 
-            runCatching { WechatApiFeature().install(context) }
+            // 注意：必须先 onInit（触发 onFeatureInit / registerSettingsProvider），再 install。
+            // Hchat 原项目中这一步由 FeatureManager.installAll 完成；漏掉 onInit 会导致
+            // UIRegistry 中缺少 script_plugin 的 settings provider，脚本设置页无法打开。
+            val apiFeature = WechatApiFeature()
+            runCatching { apiFeature.onInit(context) }
+                .onFailure { WeLogger.e(TAG, "WechatApiFeature 初始化失败", it) }
+            runCatching { apiFeature.install(context) }
                 .onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
-            runCatching { ScriptPluginFeature().install(context) }
+
+            val scriptFeature = ScriptPluginFeature()
+            runCatching { scriptFeature.onInit(context) }
+                .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 初始化失败", it) }
+            runCatching { scriptFeature.install(context) }
                 .onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
