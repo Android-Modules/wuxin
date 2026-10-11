@@ -59,8 +59,8 @@ class ProotTerminalView(context: Context) : FrameLayout(context), TermuxSessionV
 
     fun start(): Boolean {
         runCatching {
-            // libtermux.so 随 terminal-emulator aar 打包，直接按库名加载
-            System.loadLibrary("termux")
+            h.Hchat.loader.utils.NativeLibraryLoader()
+                .loadTermux(context.applicationContext ?: context, javaClass.classLoader)
         }.onFailure { HLog.e("[Hchat:Term] libtermux 预加载失败: ${it.message}", it) }
 
         prepareTerminalView()

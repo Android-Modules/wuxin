@@ -181,6 +181,9 @@ android {
         // 默认 locale values/ 仅有少量 key，完整字符串位于 values-zh-rCN；
         // androidResources.localeFilters=zh 打包时只保留中文资源，ExtraTranslation 属误报。
         disable += "ExtraTranslation"
+        // 迁移 Hchat 脚本子系统后源码体量很大（含单文件数万行），release lintVital 分析会 GC OOM，
+        // 这里跳过 release 构建的 lint（不影响编译与打包）。
+        checkReleaseBuilds = false
     }
 }
 
@@ -285,11 +288,16 @@ dependencies {
     implementation(libs.aboutlibraries.core)
     implementation(libs.aboutlibraries.compose.m3)
     implementation(libs.androidx.profileinstaller)
-    implementation(libs.miuix.ui)
-    implementation(libs.miuix.icons)
-    implementation(libs.miuix.preference)
-    implementation(libs.miuix.blur)
-    implementation(libs.miuix.shader)
+    // miuix 0.9.4（随 Hchat 脚本 UI 迁移）：改用其内置 aar，
+    // Maven 上无 miuix-nav-android:0.9.3，且脚本页需要 nav/squircle/core 模块。
+    implementation(files("libs/miuix-ui-android-0.9.4.aar"))
+    implementation(files("libs/miuix-icons-android-0.9.4.aar"))
+    implementation(files("libs/miuix-preference-android-0.9.4.aar"))
+    implementation(files("libs/miuix-blur-android-0.9.4.aar"))
+    implementation(files("libs/miuix-shader-android-0.9.4.aar"))
+    implementation(files("libs/miuix-nav-android-0.9.4.aar"))
+    implementation(files("libs/miuix-squircle-android-0.9.4.aar"))
+    implementation(files("libs/miuix-core-android-0.9.4.aar"))
     implementation(libs.materialkolor)
     implementation(libs.coil)
     implementation(libs.coil.compose)

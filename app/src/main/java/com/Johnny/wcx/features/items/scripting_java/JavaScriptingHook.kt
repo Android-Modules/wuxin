@@ -266,7 +266,22 @@ void onMemberChange(String type, String groupWxid, String userWxid, String userN
 
         WeMessageApi.methodMsgInfoHandleApiInsertMessage.hookAfter {
             val msgObj = args[0] ?: return@hookAfter
-            val msgBean = MsgInfoBean(msgObj)
+            val msgBean = MsgInfoBean().also { bean ->
+                // MsgInfoBean 已切换为 Hchat 侧的无参 + 可变字段实现；
+                // 这里从 WCX 的 MessageInfo 填充常用字段，保持 JS 侧 onHandleMsg(msg) 可用。
+                val info = com.Johnny.wcx.features.api.core.models.MessageInfo(msgObj)
+                bean.msgId = info.id
+                bean.msgSvrId = info.serverId
+                bean.talker = info.talker
+                bean.talkerId = info.talkerId.toString()
+                bean.content = info.content
+                bean.text = info.content
+                bean.type = info.typeCode.toString()
+                bean.msgType = info.typeCode.toString()
+                bean.createTime = info.createTime
+                bean.msgSource = info.msgSource
+                runCatching { bean.sender = info.sender }.onFailure { bean.sender = "" }
+            }
             JavaEngine.executeAllOnHandleMsg(scripts, msgBean)
         }
 

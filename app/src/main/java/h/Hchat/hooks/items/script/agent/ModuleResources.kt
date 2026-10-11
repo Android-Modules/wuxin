@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.content.res.Resources
 import android.graphics.drawable.Drawable
-import com.Johnny.wcx.BuildConfig
+import h.Hchat.BuildConfig
 import com.Johnny.wcx.R
 import h.Hchat.utils.HLog
 

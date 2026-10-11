@@ -1,7 +1,7 @@
 package h.Hchat.hooks.items.script.agent
 
 import android.content.Context
-import com.Johnny.wcx.BuildConfig
+import h.Hchat.BuildConfig
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.hooks.items.script.market.PluginMarketSettings
 import h.Hchat.utils.HLog
@@ -412,7 +412,7 @@ object ProotEnvironment {
 
     private fun configureContainer(context: Context) {
         val etc = File(sandboxDir(context), "etc").apply { mkdirs() }
-        File(etc, "hostname").writeText("Hchat\n")
+        File(etc, "hostname").writeText("WCX\n")
         File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
         File(etc, "hosts").writeText(
             "127.0.0.1   localhost.localdomain localhost\n" +
