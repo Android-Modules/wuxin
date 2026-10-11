@@ -78,7 +78,7 @@ object ProotEnvironment {
 
     fun envRoot(context: Context): File {
         val base = runCatching { context.dataDir }.getOrDefault(context.filesDir)
-        return File(File(base, "Hchat"), ENV_DIR).apply { if (!exists()) mkdirs() }
+        return File(File(base, "WCX"), ENV_DIR).apply { if (!exists()) mkdirs() }
     }
 
     fun sandboxDir(context: Context): File = File(envRoot(context), SANDBOX_DIR)
@@ -412,7 +412,7 @@ object ProotEnvironment {
 
     private fun configureContainer(context: Context) {
         val etc = File(sandboxDir(context), "etc").apply { mkdirs() }
-        File(etc, "hostname").writeText("Hchat\n")
+        File(etc, "hostname").writeText("WCX\n")
         File(etc, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
         File(etc, "hosts").writeText(
             "127.0.0.1   localhost.localdomain localhost\n" +
@@ -829,7 +829,7 @@ object ProotEnvironment {
 
     private fun scriptPluginDir(context: Context): String =
         runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
-            .getOrDefault("/storage/emulated/0/Android/media/${context.packageName}/Hchat/脚本插件")
+            .getOrDefault("/storage/emulated/0/Android/media/${context.packageName}/WCX/脚本插件")
 
     fun systemBinds(): List<String> = listOf(
         "/apex", "/odm", "/product", "/system", "/system_ext", "/vendor",
