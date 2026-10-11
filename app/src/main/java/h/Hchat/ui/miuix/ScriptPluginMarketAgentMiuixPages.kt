@@ -199,9 +199,9 @@ import android.content.Intent
 import android.net.Uri
 
 
-private object PluginMarketUi {
+private object WcxPluginMarketUi {
 
-private enum class PluginMarketUploadPhase {
+private enum class WcxPluginMarketUploadPhase {
     QUEUED,
     UPLOADING,
     SUCCESS,
@@ -209,8 +209,8 @@ private enum class PluginMarketUploadPhase {
     FAILED
 }
 
-private data class PluginMarketUploadStatus(
-    val phase: PluginMarketUploadPhase,
+private data class WcxPluginMarketUploadStatus(
+    val phase: WcxPluginMarketUploadPhase,
     val message: String
 )
 
@@ -765,8 +765,8 @@ fun ScriptPluginMarketPage(
                         title = "排序方式",
                         summary = if (sort == "downloads") "热门（按下载量）" else "最新发布",
                         options = listOf(
-                            PopupChoice("最新", "latest"),
-                            PopupChoice("热门", "downloads")
+                            WcxPopupChoice("最新", "latest"),
+                            WcxPopupChoice("热门", "downloads")
                         ),
                         currentValue = sort,
                         onValueChanged = { sort = it }
@@ -994,7 +994,7 @@ private fun PluginMarketNotificationBell(
         contentAlignment = Alignment.Center
     ) {
         Image(
-            imageVector = NavIcons.Bell,
+            imageVector = WcxNavIcons.Bell,
             contentDescription = "回复通知",
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
             modifier = Modifier.size(24.dp)
@@ -1290,7 +1290,7 @@ private fun PluginMarketDetailDialog(
                                     modifier = Modifier.padding(top = 12.dp)
                                 )
                                 Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                                    MarkdownUi.Content(
+                                    WcxMarkdownUi.Content(
                                         context = context,
                                         markdown = readme,
                                         contentPadding = PaddingValues(0.dp)
@@ -1325,7 +1325,7 @@ private fun PluginMarketDetailDialog(
                             replyDraft = ""
                         }
                     )
-                    PluginMarketHistoryUi.HistoryList(
+                    WcxPluginMarketHistoryUi.HistoryList(
                         versions = historyVersions,
                         loading = historyLoading,
                         error = historyError,
@@ -1855,14 +1855,14 @@ private fun PluginMarketReplyRow(
     }
 }
 
-private data class PluginMarketCommentThread(
+private data class WcxPluginMarketCommentThread(
     val root: PluginMarketComment,
     val replies: List<PluginMarketComment>
 )
 
 private fun buildPluginMarketCommentThreads(
     comments: List<PluginMarketComment>
-): List<PluginMarketCommentThread> {
+): List<WcxPluginMarketCommentThread> {
     val commentsById = comments.associateBy { it.commentId }
     val roots = comments.filter { comment ->
         comment.parentCommentId.isBlank() || comment.parentCommentId !in commentsById
@@ -1884,7 +1884,7 @@ private fun buildPluginMarketCommentThreads(
         }
     }
     return roots.map { root ->
-        PluginMarketCommentThread(
+        WcxPluginMarketCommentThread(
             root = root,
             replies = repliesByRoot[root.commentId].orEmpty().sortedWith(
                 compareBy<PluginMarketComment> { it.createdAt }.thenBy { it.commentId }
@@ -1929,7 +1929,7 @@ private fun PluginMarketUploadDialog(
     var remoteNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var releaseNotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var extraFiles by remember { mutableStateOf<Map<String, List<PluginMarketFile>>>(emptyMap()) }
-    var statuses by remember { mutableStateOf<Map<String, PluginMarketUploadStatus>>(emptyMap()) }
+    var statuses by remember { mutableStateOf<Map<String, WcxPluginMarketUploadStatus>>(emptyMap()) }
     var uploading by remember { mutableStateOf(false) }
     var uploadedAny by remember { mutableStateOf(false) }
     var reloadVersion by remember { mutableStateOf(0) }
@@ -1974,7 +1974,7 @@ private fun PluginMarketUploadDialog(
             return
         }
         statuses = ordered.associate { plugin ->
-            plugin.id to PluginMarketUploadStatus(PluginMarketUploadPhase.QUEUED, "等待上传")
+            plugin.id to WcxPluginMarketUploadStatus(WcxPluginMarketUploadPhase.QUEUED, "等待上传")
         }
         uploading = true
         scope.launch {
@@ -1982,7 +1982,7 @@ private fun PluginMarketUploadDialog(
             var pendingCount = 0
             ordered.forEach { plugin ->
                 statuses = statuses + (
-                    plugin.id to PluginMarketUploadStatus(PluginMarketUploadPhase.UPLOADING, "正在上传")
+                    plugin.id to WcxPluginMarketUploadStatus(WcxPluginMarketUploadPhase.UPLOADING, "正在上传")
                 )
                 val result = withContext(Dispatchers.IO) {
                     PluginMarketRepository.upload(
@@ -2000,8 +2000,8 @@ private fun PluginMarketUploadDialog(
                             PluginMarketReviewStatus.PENDING -> {
                                 pendingCount++
                                 statuses = statuses + (
-                                    plugin.id to PluginMarketUploadStatus(
-                                        PluginMarketUploadPhase.PENDING_REVIEW,
+                                    plugin.id to WcxPluginMarketUploadStatus(
+                                        WcxPluginMarketUploadPhase.PENDING_REVIEW,
                                         "上传成功，待审核 · ${ownership.remotePluginId}"
                                     )
                                 )
@@ -2009,8 +2009,8 @@ private fun PluginMarketUploadDialog(
                             PluginMarketReviewStatus.APPROVED -> {
                                 publishedCount++
                                 statuses = statuses + (
-                                    plugin.id to PluginMarketUploadStatus(
-                                        PluginMarketUploadPhase.SUCCESS,
+                                    plugin.id to WcxPluginMarketUploadStatus(
+                                        WcxPluginMarketUploadPhase.SUCCESS,
                                         "上传成功 · ${ownership.remotePluginId}"
                                     )
                                 )
@@ -2019,8 +2019,8 @@ private fun PluginMarketUploadDialog(
                     },
                     onFailure = { error ->
                         statuses = statuses + (
-                            plugin.id to PluginMarketUploadStatus(
-                                PluginMarketUploadPhase.FAILED,
+                            plugin.id to WcxPluginMarketUploadStatus(
+                                WcxPluginMarketUploadPhase.FAILED,
                                 "上传失败: ${pluginMarketErrorMessage(error)}"
                             )
                         )
@@ -2113,8 +2113,8 @@ private fun PluginMarketUploadDialog(
                                     releaseNotes = releaseNotes + (plugin.id to notes.take(500))
                                 },
                                 onPickExtraFiles = {
-                                    ScriptPluginAgentUi.findAgentActivity(context)?.let { activity ->
-                                        PluginMarketExtraFilePickerBridge.launch(activity) { files ->
+                                    WcxScriptPluginAgentUi.findAgentActivity(context)?.let { activity ->
+                                        WcxPluginMarketExtraFilePickerBridge.launch(activity) { files ->
                                             val existing = extraFiles[plugin.id].orEmpty()
                                             val merged = (files + existing).distinctBy {
                                                 it.name.lowercase(Locale.ROOT)
@@ -2165,7 +2165,7 @@ private fun PluginMarketUploadRow(
     remoteName: String,
     releaseNotes: String,
     extraFiles: List<PluginMarketFile>,
-    status: PluginMarketUploadStatus?,
+    status: WcxPluginMarketUploadStatus?,
     enabled: Boolean,
     onSelectedChange: (Boolean) -> Unit,
     onRemoteNameChange: (String) -> Unit,
@@ -2290,9 +2290,9 @@ private fun PluginMarketUploadRow(
         }
         if (status != null) {
             val color = when (status.phase) {
-                PluginMarketUploadPhase.SUCCESS -> MiuixTheme.colorScheme.primary
-                PluginMarketUploadPhase.PENDING_REVIEW -> MiuixTheme.colorScheme.onSurfaceVariantSummary
-                PluginMarketUploadPhase.FAILED -> Color(0xFFD93025)
+                WcxPluginMarketUploadPhase.SUCCESS -> MiuixTheme.colorScheme.primary
+                WcxPluginMarketUploadPhase.PENDING_REVIEW -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                WcxPluginMarketUploadPhase.FAILED -> Color(0xFFD93025)
                 else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
             }
             Text(
@@ -2314,7 +2314,7 @@ private fun pluginMarketErrorMessage(error: Throwable): String {
 
 }
 
-private object PluginMarketHistoryUi {
+private object WcxPluginMarketHistoryUi {
     @Composable
     fun HistoryList(
         versions: List<PluginMarketHistoryVersion>,
@@ -2409,9 +2409,9 @@ private fun formatPluginMarketTime(value: String): String {
     return pluginMarketBeijingTimeFormatter.format(instant)
 }
 
-internal object ScriptPluginAgentUi {
+internal object WcxScriptPluginAgentUi {
 
-private data class ScriptPluginAgentPendingWrite(
+private data class WcxScriptPluginAgentPendingWrite(
     val messageIndex: Int,
     val draft: ScriptPluginAgentDraft,
     val diff: String,
@@ -2420,13 +2420,13 @@ private data class ScriptPluginAgentPendingWrite(
     val risky: Boolean
 )
 
-private data class ScriptPluginAgentPendingDelete(
+private data class WcxScriptPluginAgentPendingDelete(
     val messageIndex: Int,
     val pluginId: String,
     val pluginName: String
 )
 
-private data class ScriptPluginAgentPendingWorkspaceChange(
+private data class WcxScriptPluginAgentPendingWorkspaceChange(
     val messageIndex: Int,
     val change: ScriptPluginAgentWorkspaceChange,
     val isNewPlugin: Boolean,
@@ -2435,7 +2435,7 @@ private data class ScriptPluginAgentPendingWorkspaceChange(
     val applyError: String = ""
 )
 
-private class ScriptPluginAgentWorkspaceToolApproval(
+private class WcxScriptPluginAgentWorkspaceToolApproval(
     val confirmation: ScriptPluginAgentWorkspaceToolConfirmation
 ) {
     private val decision = AtomicReference<ScriptPluginAgentWorkspaceWriteDecision?>(null)
@@ -2452,19 +2452,19 @@ private class ScriptPluginAgentWorkspaceToolApproval(
     }
 }
 
-private data class ScriptPluginAgentPendingMessage(
+private data class WcxScriptPluginAgentPendingMessage(
     val id: Long,
     val content: String,
     val attachments: List<ScriptPluginAgentAttachment>,
     val quotedMessage: ScriptPluginAgentQuotedMessage?
 )
 
-private data class ScriptPluginAgentRenderedMessage(
+private data class WcxScriptPluginAgentRenderedMessage(
     val sourceIndex: Int,
     val message: ScriptPluginAgentChatMessage
 )
 
-private class ScriptPluginAgentSessionRuntimeState(session: ScriptPluginAgentSession) {
+private class WcxScriptPluginAgentSessionRuntimeState(session: ScriptPluginAgentSession) {
     val id = session.id
     val title = mutableStateOf(session.title)
     val createdAt = mutableStateOf(session.createdAt)
@@ -2483,7 +2483,7 @@ private class ScriptPluginAgentSessionRuntimeState(session: ScriptPluginAgentSes
     val messageInput = mutableStateOf("")
     val pendingAttachments = mutableStateOf<List<ScriptPluginAgentAttachment>>(emptyList())
     val pendingQuotedMessage = mutableStateOf<ScriptPluginAgentQuotedMessage?>(null)
-    val pendingMessages = mutableStateOf<List<ScriptPluginAgentPendingMessage>>(emptyList())
+    val pendingMessages = mutableStateOf<List<WcxScriptPluginAgentPendingMessage>>(emptyList())
     val pendingMessagesExpanded = mutableStateOf(true)
     val nextPendingMessageId = mutableStateOf(1L)
     val generating = mutableStateOf(false)
@@ -2492,10 +2492,10 @@ private class ScriptPluginAgentSessionRuntimeState(session: ScriptPluginAgentSes
     val contextCompacting = mutableStateOf(false)
     val contextCompactionStartedAt = mutableStateOf(0L)
     val applyingFileOperation = mutableStateOf(false)
-    val pendingWrite = mutableStateOf<ScriptPluginAgentPendingWrite?>(null)
-    val pendingDelete = mutableStateOf<ScriptPluginAgentPendingDelete?>(null)
-    val pendingWorkspaceChange = mutableStateOf<ScriptPluginAgentPendingWorkspaceChange?>(null)
-    val pendingToolApproval = mutableStateOf<ScriptPluginAgentWorkspaceToolApproval?>(null)
+    val pendingWrite = mutableStateOf<WcxScriptPluginAgentPendingWrite?>(null)
+    val pendingDelete = mutableStateOf<WcxScriptPluginAgentPendingDelete?>(null)
+    val pendingWorkspaceChange = mutableStateOf<WcxScriptPluginAgentPendingWorkspaceChange?>(null)
+    val pendingToolApproval = mutableStateOf<WcxScriptPluginAgentWorkspaceToolApproval?>(null)
     val showPendingWorkspaceDialog = mutableStateOf(false)
     val showPendingWriteDialog = mutableStateOf(false)
     val showPendingDeleteDialog = mutableStateOf(false)
@@ -2545,9 +2545,9 @@ private class ScriptPluginAgentSessionRuntimeState(session: ScriptPluginAgentSes
     }
 }
 
-private class ScriptPluginAgentSessionCheckpointSaver(
+private class WcxScriptPluginAgentSessionCheckpointSaver(
     context: Context,
-    private val state: ScriptPluginAgentSessionRuntimeState
+    private val state: WcxScriptPluginAgentSessionRuntimeState
 ) {
     private val appContext = context.applicationContext ?: context
     private val handler = Handler(Looper.getMainLooper())
@@ -2579,21 +2579,21 @@ private class ScriptPluginAgentSessionCheckpointSaver(
     }
 }
 
-private object ScriptPluginAgentRuntime {
-    private val sessions = java.util.concurrent.ConcurrentHashMap<String, ScriptPluginAgentSessionRuntimeState>()
+private object WcxScriptPluginAgentRuntime {
+    private val sessions = java.util.concurrent.ConcurrentHashMap<String, WcxScriptPluginAgentSessionRuntimeState>()
 
     @Volatile
     private var resumeSessionId: String? = null
 
-    fun createSession(): ScriptPluginAgentSessionRuntimeState {
+    fun createSession(): WcxScriptPluginAgentSessionRuntimeState {
         return stateFor(ScriptPluginAgentSessionStore.newSession())
     }
 
-    fun stateFor(session: ScriptPluginAgentSession): ScriptPluginAgentSessionRuntimeState {
-        return sessions.computeIfAbsent(session.id) { ScriptPluginAgentSessionRuntimeState(session) }
+    fun stateFor(session: ScriptPluginAgentSession): WcxScriptPluginAgentSessionRuntimeState {
+        return sessions.computeIfAbsent(session.id) { WcxScriptPluginAgentSessionRuntimeState(session) }
     }
 
-    fun consumeResumeSession(context: Context): ScriptPluginAgentSessionRuntimeState? {
+    fun consumeResumeSession(context: Context): WcxScriptPluginAgentSessionRuntimeState? {
         val id = resumeSessionId
         resumeSessionId = null
         if (id != null) {
@@ -2652,7 +2652,7 @@ fun ScriptPluginAgentWorkspacePage(
     onExitHandlerChanged: ((() -> Unit)?) -> Unit
 ) {
     val initialSessionState = remember(context) {
-        ScriptPluginAgentRuntime.consumeResumeSession(context) ?: ScriptPluginAgentRuntime.createSession()
+        WcxScriptPluginAgentRuntime.consumeResumeSession(context) ?: WcxScriptPluginAgentRuntime.createSession()
     }
     var activeSessionState by remember { mutableStateOf(initialSessionState) }
     val renderedSessionState = activeSessionState
@@ -2729,7 +2729,7 @@ fun ScriptPluginAgentWorkspacePage(
     }
     val profiles = remember(profileVersion) { ScriptPluginAgentSettings.loadProfiles(context) }
     val checkpointSaver = remember(renderedSessionState) {
-        ScriptPluginAgentSessionCheckpointSaver(context, renderedSessionState)
+        WcxScriptPluginAgentSessionCheckpointSaver(context, renderedSessionState)
     }
     val exitPrepared = remember { AtomicBoolean(false) }
 
@@ -2754,7 +2754,7 @@ fun ScriptPluginAgentWorkspacePage(
     fun saveCurrentSession() {
         if (!ScriptPluginAgentSessionStore.hasConversation(sessionMessages)) {
             val emptySessionId = activeSessionId
-            ScriptPluginAgentRuntime.remove(emptySessionId)
+            WcxScriptPluginAgentRuntime.remove(emptySessionId)
             Thread({
                 runCatching {
                     ScriptPluginAgentSessionStore.discardEmptySession(context, emptySessionId)
@@ -2779,7 +2779,7 @@ fun ScriptPluginAgentWorkspacePage(
             }
             saveCurrentSession()
         }
-        activeSessionState = ScriptPluginAgentRuntime.stateFor(session)
+        activeSessionState = WcxScriptPluginAgentRuntime.stateFor(session)
         showConfig = false
         showModelPicker = false
         showQuickProfilePicker = false
@@ -2795,7 +2795,7 @@ fun ScriptPluginAgentWorkspacePage(
             }
             saveCurrentSession()
         }
-        activeSessionState = ScriptPluginAgentRuntime.createSession()
+        activeSessionState = WcxScriptPluginAgentRuntime.createSession()
         showConfig = false
         showModelPicker = false
         showQuickProfilePicker = false
@@ -2855,7 +2855,7 @@ fun ScriptPluginAgentWorkspacePage(
             Toast.makeText(context, "当前页面无法打开文件选择器", Toast.LENGTH_SHORT).show()
             return
         }
-        ScriptPluginAgentAttachmentPickerBridge.launch(
+        WcxScriptPluginAgentAttachmentPickerBridge.launch(
             activity,
             ScriptPluginAgentSessionStore.attachmentDir(context, activeSessionId)
         ) { selected ->
@@ -3012,7 +3012,7 @@ fun ScriptPluginAgentWorkspacePage(
                     ).show()
                 }.onFailure { error ->
                     val reason = error.message ?: "未知错误"
-                    pendingWorkspaceChange = ScriptPluginAgentPendingWorkspaceChange(
+                    pendingWorkspaceChange = WcxScriptPluginAgentPendingWorkspaceChange(
                         messageIndex = messageIndex,
                         change = change,
                         isNewPlugin = !change.existed,
@@ -3052,7 +3052,7 @@ fun ScriptPluginAgentWorkspacePage(
         val isNewPlugin = !change.existed
         val hasDeletedPaths = change.deletePlugin || change.deletedPaths.isNotEmpty()
         val risky = change.warnings.any { it.risky }
-        pendingWorkspaceChange = ScriptPluginAgentPendingWorkspaceChange(
+        pendingWorkspaceChange = WcxScriptPluginAgentPendingWorkspaceChange(
             messageIndex = messageIndex,
             change = change,
             isNewPlugin = isNewPlugin,
@@ -3134,7 +3134,7 @@ fun ScriptPluginAgentWorkspacePage(
             writeAgentDraft(messageIndex, draft, isNewPlugin)
             return
         }
-        pendingWrite = ScriptPluginAgentPendingWrite(
+        pendingWrite = WcxScriptPluginAgentPendingWrite(
             messageIndex = messageIndex,
             draft = draft,
             diff = sessionMessages.getOrNull(messageIndex)?.diff.orEmpty(),
@@ -3206,7 +3206,7 @@ fun ScriptPluginAgentWorkspacePage(
             deleteAgentPlugin(messageIndex, plugin.id)
             return
         }
-        pendingDelete = ScriptPluginAgentPendingDelete(
+        pendingDelete = WcxScriptPluginAgentPendingDelete(
             messageIndex = messageIndex,
             pluginId = plugin.id,
             pluginName = plugin.displayName ?: plugin.name
@@ -3390,7 +3390,7 @@ fun ScriptPluginAgentWorkspacePage(
                     request,
                     cancellation,
                     { confirmation ->
-                        val approval = ScriptPluginAgentWorkspaceToolApproval(confirmation)
+                        val approval = WcxScriptPluginAgentWorkspaceToolApproval(confirmation)
                         Handler(Looper.getMainLooper()).post {
                             if (activeGenerationId == runId) {
                                 pendingToolApproval = approval
@@ -3864,7 +3864,7 @@ fun ScriptPluginAgentWorkspacePage(
         if (!generating || applyingFileOperation) return
         val message = messageInput.trim()
         if (message.isBlank() && pendingAttachments.isEmpty()) return
-        pendingMessages = pendingMessages + ScriptPluginAgentPendingMessage(
+        pendingMessages = pendingMessages + WcxScriptPluginAgentPendingMessage(
             id = nextPendingMessageId++,
             content = message,
             attachments = pendingAttachments,
@@ -4544,7 +4544,7 @@ fun ScriptPluginAgentWorkspacePage(
 
     fun persistSession(session: ScriptPluginAgentSession) {
         ScriptPluginAgentSessionStore.save(context, session)
-        ScriptPluginAgentRuntime.updateMetadata(session)
+        WcxScriptPluginAgentRuntime.updateMetadata(session)
         if (session.id == activeSessionId) {
             sessionTitle = session.title
             sessionPinned = session.pinned
@@ -4608,7 +4608,7 @@ fun ScriptPluginAgentWorkspacePage(
             Toast.makeText(context, "请先解锁该对话", Toast.LENGTH_SHORT).show()
             return
         }
-        if (ScriptPluginAgentRuntime.isBusy(session.id)) {
+        if (WcxScriptPluginAgentRuntime.isBusy(session.id)) {
             Toast.makeText(context, "该对话正在运行或有待确认操作，请先处理后再删除", Toast.LENGTH_SHORT).show()
             return
         }
@@ -4616,7 +4616,7 @@ fun ScriptPluginAgentWorkspacePage(
             if (session.id == activeSessionId) resumeState else session.resumeState
         )
         ScriptPluginAgentSessionStore.delete(context, session.id)
-        ScriptPluginAgentRuntime.remove(session.id)
+        WcxScriptPluginAgentRuntime.remove(session.id)
         historyVersion++
         if (session.id == activeSessionId) {
             val next = ScriptPluginAgentSessionStore.list(context).firstOrNull()
@@ -4628,7 +4628,7 @@ fun ScriptPluginAgentWorkspacePage(
         if (!exitPrepared.compareAndSet(false, true)) return
         val hasConversation = ScriptPluginAgentSessionStore.hasConversation(sessionMessages)
         saveCurrentSession()
-        if (hasConversation) ScriptPluginAgentRuntime.resumeOnNextEntry(activeSessionId)
+        if (hasConversation) WcxScriptPluginAgentRuntime.resumeOnNextEntry(activeSessionId)
     }
 
     fun exitPage() {
@@ -5272,14 +5272,14 @@ fun ScriptPluginAgentWorkspacePage(
             )
         }
         if (showHistory) {
-            val workingSessionIds = ScriptPluginAgentRuntime.workingSessionIds()
+            val workingSessionIds = WcxScriptPluginAgentRuntime.workingSessionIds()
             val visibleSessions = if (ScriptPluginAgentSessionStore.hasConversation(sessionMessages)) {
                 val currentSession = currentSessionSnapshot()
                 (sessions.filterNot { it.id == activeSessionId } + currentSession).distinctBy { it.id }
             } else {
                 sessions.filterNot { it.id == activeSessionId }
             }
-            val runtimeSessions = ScriptPluginAgentRuntime.snapshots()
+            val runtimeSessions = WcxScriptPluginAgentRuntime.snapshots()
             ScriptPluginAgentHistoryDrawer(
                 sessions = ScriptPluginAgentSessionStore.sorted(
                     (visibleSessions + runtimeSessions).distinctBy { it.id }
@@ -5300,10 +5300,10 @@ fun ScriptPluginAgentWorkspacePage(
     }
 }
 
-private fun promptCacheModeChoices(): List<PopupChoice<String>> = listOf(
-    PopupChoice("自动", ScriptPluginAgentSettings.PROMPT_CACHE_AUTO),
-    PopupChoice("强制", ScriptPluginAgentSettings.PROMPT_CACHE_FORCE),
-    PopupChoice("关闭", ScriptPluginAgentSettings.PROMPT_CACHE_OFF)
+private fun promptCacheModeChoices(): List<WcxPopupChoice<String>> = listOf(
+    WcxPopupChoice("自动", ScriptPluginAgentSettings.PROMPT_CACHE_AUTO),
+    WcxPopupChoice("强制", ScriptPluginAgentSettings.PROMPT_CACHE_FORCE),
+    WcxPopupChoice("关闭", ScriptPluginAgentSettings.PROMPT_CACHE_OFF)
 )
 
 private fun promptCacheModeSummary(mode: String, endpointMode: String): String {
@@ -5614,7 +5614,7 @@ private fun ScriptPluginAgentConfigPage(
                         PopupChoiceRow(
                             title = "当前配置",
                             summary = activeProfileName,
-                            options = profiles.map { PopupChoice(it.name, it.id) },
+                            options = profiles.map { WcxPopupChoice(it.name, it.id) },
                             currentValue = activeProfileId,
                             onValueChanged = { id -> profiles.firstOrNull { it.id == id }?.let(onProfileSelected) }
                         )
@@ -5668,14 +5668,14 @@ private fun ScriptPluginAgentConfigPage(
                             title = "接口类型",
                             summary = ScriptPluginAgentSettings.endpointModeLabel(endpointMode),
                             options = listOf(
-                                PopupChoice("OpenAI 兼容", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENAI_COMPATIBLE),
-                                PopupChoice("OpenAI", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENAI),
-                                PopupChoice("DeepSeek", ScriptPluginAgentSettings.ENDPOINT_MODE_DEEPSEEK),
-                                PopupChoice("OpenRouter", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENROUTER),
-                                PopupChoice("硅基流动", ScriptPluginAgentSettings.ENDPOINT_MODE_SILICONFLOW),
-                                PopupChoice("Gemini", ScriptPluginAgentSettings.ENDPOINT_MODE_GEMINI),
-                                PopupChoice("Anthropic", ScriptPluginAgentSettings.ENDPOINT_MODE_ANTHROPIC),
-                                PopupChoice("自定义请求链接", ScriptPluginAgentSettings.ENDPOINT_MODE_CUSTOM_URL)
+                                WcxPopupChoice("OpenAI 兼容", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENAI_COMPATIBLE),
+                                WcxPopupChoice("OpenAI", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENAI),
+                                WcxPopupChoice("DeepSeek", ScriptPluginAgentSettings.ENDPOINT_MODE_DEEPSEEK),
+                                WcxPopupChoice("OpenRouter", ScriptPluginAgentSettings.ENDPOINT_MODE_OPENROUTER),
+                                WcxPopupChoice("硅基流动", ScriptPluginAgentSettings.ENDPOINT_MODE_SILICONFLOW),
+                                WcxPopupChoice("Gemini", ScriptPluginAgentSettings.ENDPOINT_MODE_GEMINI),
+                                WcxPopupChoice("Anthropic", ScriptPluginAgentSettings.ENDPOINT_MODE_ANTHROPIC),
+                                WcxPopupChoice("自定义请求链接", ScriptPluginAgentSettings.ENDPOINT_MODE_CUSTOM_URL)
                             ),
                             currentValue = endpointMode,
                             onValueChanged = onEndpointModeChange
@@ -5863,7 +5863,7 @@ private fun LazyListScope.codexTabItems(
             PopupChoiceRow(
                 title = "当前配置",
                 summary = profile.name,
-                options = profiles.map { PopupChoice(it.name, it.id) },
+                options = profiles.map { WcxPopupChoice(it.name, it.id) },
                 currentValue = profile.id,
                 onValueChanged = { id ->
                     profiles.firstOrNull { it.id == id }?.let { onProfileSelected(it.id) }
@@ -5943,7 +5943,7 @@ private fun LazyListScope.codexTabItems(
             PopupChoiceRow(
                 title = "思考程度",
                 summary = ScriptPluginAgentReasoning.label(profile.effort),
-                options = CodexSettings.EFFORT_OPTIONS.map { PopupChoice(it.second, it.first) },
+                options = CodexSettings.EFFORT_OPTIONS.map { WcxPopupChoice(it.second, it.first) },
                 currentValue = profile.effort,
                 onValueChanged = { onProfileChange(profile.copy(effort = it)) }
             )
@@ -6404,7 +6404,7 @@ private fun ScriptPluginAgentTerminalCard() {
                 title = "终端字体",
                 summary = "终端显示字体，未下载的需联网获取（每个约 200KB）",
                 options = h.Hchat.hooks.items.script.agent.TerminalFonts.ALL.map {
-                    PopupChoice(it.label, it.id)
+                    WcxPopupChoice(it.label, it.id)
                 },
                 currentValue = fontId,
                 onValueChanged = { id ->
@@ -6637,7 +6637,7 @@ private fun ScriptPluginAgentReasoningRow(
     PopupChoiceRow(
         title = "推理强度",
         summary = ScriptPluginAgentReasoning.description(endpointMode, model),
-        options = options.map { (value, label) -> PopupChoice(label, value) },
+        options = options.map { (value, label) -> WcxPopupChoice(label, value) },
         currentValue = ScriptPluginAgentReasoning.effectiveEffort(endpointMode, model, effort),
         onValueChanged = onValueChanged
     )
@@ -6723,7 +6723,7 @@ private fun CodexModelPickerPage(
                     PopupChoiceRow(
                         title = "思考程度",
                         summary = ScriptPluginAgentReasoning.label(pendingEffort),
-                        options = CodexSettings.EFFORT_OPTIONS.map { PopupChoice(it.second, it.first) },
+                        options = CodexSettings.EFFORT_OPTIONS.map { WcxPopupChoice(it.second, it.first) },
                         currentValue = pendingEffort,
                         onValueChanged = { pendingEffort = it }
                     )
@@ -6890,7 +6890,7 @@ private fun ScriptPluginAgentModelPickerPage(
 
 private fun scriptPluginAgentRenderedMessages(
     messages: List<ScriptPluginAgentChatMessage>
-): List<ScriptPluginAgentRenderedMessage> {
+): List<WcxScriptPluginAgentRenderedMessage> {
     val firstToolIndexByTurn = HashMap<String, Int>()
     messages.forEachIndexed { index, message ->
         if (message.role == "tool" && message.turnId.isNotBlank()) {
@@ -6904,7 +6904,7 @@ private fun scriptPluginAgentRenderedMessages(
     return buildList {
         messages.forEachIndexed { index, message ->
             if (message.role != "tool" || message.turnId.isBlank()) {
-                add(ScriptPluginAgentRenderedMessage(index, message))
+                add(WcxScriptPluginAgentRenderedMessage(index, message))
                 return@forEachIndexed
             }
             if (firstToolIndexByTurn[message.turnId] != index) return@forEachIndexed
@@ -6912,7 +6912,7 @@ private fun scriptPluginAgentRenderedMessages(
             val hasPending = events.any { it.status == "queued" || it.status == "running" }
             val wasInterrupted = events.any { it.status == "interrupted" }
             add(
-                ScriptPluginAgentRenderedMessage(
+                WcxScriptPluginAgentRenderedMessage(
                     sourceIndex = index,
                     message = message.copy(
                         toolEvents = events,
@@ -6937,7 +6937,7 @@ private fun ScriptPluginAgentChatPage(
     messageInput: String,
     pendingAttachments: List<ScriptPluginAgentAttachment>,
     pendingQuotedMessage: ScriptPluginAgentQuotedMessage?,
-    pendingMessages: List<ScriptPluginAgentPendingMessage>,
+    pendingMessages: List<WcxScriptPluginAgentPendingMessage>,
     pendingMessagesExpanded: Boolean,
     activeProfileName: String,
     activeModel: String,
@@ -7131,25 +7131,25 @@ private fun ScriptPluginAgentChatPage(
         onBack = onBack,
         topBarActions = {
             Image(
-                imageVector = NavIcons.Terminal,
+                imageVector = WcxNavIcons.Terminal,
                 contentDescription = "Ubuntu 终端",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
                 modifier = Modifier.size(24.dp).responsiveTap(onClick = { showTerminal = true })
             )
             Image(
-                imageVector = NavIcons.Compact,
+                imageVector = WcxNavIcons.Compact,
                 contentDescription = "压缩上下文",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
                 modifier = Modifier.padding(start = 14.dp).size(24.dp).responsiveTap(onClick = onCompact)
             )
             Image(
-                imageVector = NavIcons.History,
+                imageVector = WcxNavIcons.History,
                 contentDescription = "会话历史",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
                 modifier = Modifier.padding(start = 14.dp).size(24.dp).responsiveTap(onClick = onOpenHistory)
             )
             Image(
-                imageVector = NavIcons.Settings,
+                imageVector = WcxNavIcons.Settings,
                 contentDescription = "Agent 配置",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
                 modifier = Modifier.padding(start = 14.dp).size(24.dp).responsiveTap(onClick = onOpenConfig)
@@ -7226,7 +7226,7 @@ private fun ScriptPluginAgentChatPage(
                 }
                 if (showScrollToBottom && messages.isNotEmpty()) {
                     Image(
-                        imageVector = NavIcons.MoveDown,
+                        imageVector = WcxNavIcons.MoveDown,
                         contentDescription = "回到底部",
                         colorFilter = ColorFilter.tint(Color.White),
                         modifier = Modifier.align(Alignment.BottomEnd)
@@ -7307,7 +7307,7 @@ private fun ScriptPluginAgentPendingConfirmationBar(label: String, onClick: () -
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
-            imageVector = NavIcons.Modules,
+            imageVector = WcxNavIcons.Modules,
             contentDescription = null,
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
             modifier = Modifier.size(20.dp)
@@ -7448,7 +7448,7 @@ private fun ScriptPluginAgentMessageBlock(
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 } else {
-                    MarkdownUi.Content(
+                    WcxMarkdownUi.Content(
                         context = context,
                         markdown = message.content,
                         contentPadding = PaddingValues(top = if (message.toolEvents.isNotEmpty()) 8.dp else 4.dp),
@@ -7564,7 +7564,7 @@ private fun ScriptPluginAgentReasoningGroup(message: ScriptPluginAgentChatMessag
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                imageVector = NavIcons.Expand,
+                imageVector = WcxNavIcons.Expand,
                 contentDescription = if (expanded) "收起思考过程" else "展开思考过程",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = rotation }
@@ -7582,7 +7582,7 @@ private fun ScriptPluginAgentReasoningGroup(message: ScriptPluginAgentChatMessag
             enter = fadeIn(tween(160)),
             exit = fadeOut(tween(120))
         ) {
-            MarkdownUi.Text(
+            WcxMarkdownUi.Text(
                 context = context,
                 text = reasoning,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -7624,7 +7624,7 @@ private fun ScriptPluginAgentQuotedMessagePreview(
         }
         if (onClear != null) {
             Image(
-                imageVector = NavIcons.Close,
+                imageVector = WcxNavIcons.Close,
                 contentDescription = "取消引用",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.padding(start = 6.dp).size(24.dp)
@@ -7678,7 +7678,7 @@ private fun ScriptPluginAgentToolGroup(message: ScriptPluginAgentChatMessage) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                imageVector = NavIcons.Expand,
+                imageVector = WcxNavIcons.Expand,
                 contentDescription = if (expanded) "收起" else "展开",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = rotation }
@@ -7712,9 +7712,9 @@ private fun ScriptPluginAgentToolEventRow(
 ) {
     val workspaceWrite = isScriptPluginAgentWorkspaceWriteEvent(event)
     val icon = when (event.kind) {
-        "search" -> NavIcons.Search
-        "plugin", "workspace" -> NavIcons.Modules
-        else -> NavIcons.Compact
+        "search" -> WcxNavIcons.Search
+        "plugin", "workspace" -> WcxNavIcons.Modules
+        else -> WcxNavIcons.Compact
     }
     val statusText = when (event.status) {
         "queued" -> "排队"
@@ -7807,7 +7807,7 @@ private fun ScriptPluginAgentToolEventRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
-                    imageVector = NavIcons.Modules,
+                    imageVector = WcxNavIcons.Modules,
                     contentDescription = null,
                     colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
                     modifier = Modifier.size(14.dp)
@@ -7826,7 +7826,7 @@ private fun ScriptPluginAgentToolEventRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
-                    imageVector = NavIcons.Back,
+                    imageVector = WcxNavIcons.Back,
                     contentDescription = null,
                     colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                     modifier = Modifier.size(14.dp).graphicsLayer { rotationZ = 180f }
@@ -7874,7 +7874,7 @@ private fun ScriptPluginAgentToolEventDialog(
                         fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                     )
-                    MarkdownUi.CodeBlock(event.arguments)
+                    WcxMarkdownUi.CodeBlock(event.arguments)
                 }
                 if (!workspaceWrite && event.diff.isNotBlank()) {
                     Text(
@@ -7971,7 +7971,7 @@ private fun ScriptPluginAgentDiffGroup(stateKey: String, diff: String) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                imageVector = NavIcons.Expand,
+                imageVector = WcxNavIcons.Expand,
                 contentDescription = if (expanded) "收起代码变更" else "展开代码变更",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = rotation }
@@ -8002,7 +8002,7 @@ private fun ScriptPluginAgentToolResultBlock(event: ScriptPluginAgentToolEvent, 
     if (diff != null) {
         ScriptPluginAgentDiffCodeBlock(diff)
     } else {
-        MarkdownUi.CodeBlock(value)
+        WcxMarkdownUi.CodeBlock(value)
     }
 }
 
@@ -8090,27 +8090,27 @@ private fun ScriptPluginAgentMessageMenu(
         onDismissRequest = onDismiss,
         content = {
             Column {
-                ScriptPluginAgentMessageActionRow(NavIcons.Copy, "复制消息", onCopy)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Copy, "复制消息", onCopy)
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.Volume, "朗读消息", onReadAloud)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Volume, "朗读消息", onReadAloud)
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.Quote, "引用消息", onQuote)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Quote, "引用消息", onQuote)
                 if (onRegenerate != null) {
                     InsetDivider()
-                    ScriptPluginAgentMessageActionRow(NavIcons.Refresh, "重新生成", onRegenerate)
+                    ScriptPluginAgentMessageActionRow(WcxNavIcons.Refresh, "重新生成", onRegenerate)
                 }
                 if (onEditAndResend != null) {
                     InsetDivider()
-                    ScriptPluginAgentMessageActionRow(NavIcons.Edit, "编辑并重发", onEditAndResend)
+                    ScriptPluginAgentMessageActionRow(WcxNavIcons.Edit, "编辑并重发", onEditAndResend)
                 }
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.History, "回滚到此处", onRollback)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.History, "回滚到此处", onRollback)
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.Delete, "删除", onDelete)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Delete, "删除", onDelete)
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.Branch, "创建分支", onCreateBranch)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Branch, "创建分支", onCreateBranch)
                 InsetDivider()
-                ScriptPluginAgentMessageActionRow(NavIcons.Info, "信息", onInfo)
+                ScriptPluginAgentMessageActionRow(WcxNavIcons.Info, "信息", onInfo)
                 if (message.content.isBlank()) {
                     Text(
                         text = "当前消息没有正文",
@@ -8391,19 +8391,19 @@ private fun ScriptPluginAgentHistoryDrawer(
                         modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
                         textAlign = TextAlign.Center
                     )
-                    ScriptPluginAgentHistoryActionRow(NavIcons.Edit, "编辑标题") {
+                    ScriptPluginAgentHistoryActionRow(WcxNavIcons.Edit, "编辑标题") {
                         titleDraft = actionSession.title
                         renameSessionId = actionSession.id
                         actionSessionId = null
                     }
-                    ScriptPluginAgentHistoryActionRow(NavIcons.MoveUp, "上移", enabled = canMoveUp) {
+                    ScriptPluginAgentHistoryActionRow(WcxNavIcons.MoveUp, "上移", enabled = canMoveUp) {
                         movedSessions(actionSession, -1)?.let { next ->
                             orderedSessions = next
                             onCommitOrder(next)
                         }
                         actionSessionId = null
                     }
-                    ScriptPluginAgentHistoryActionRow(NavIcons.MoveDown, "下移", enabled = canMoveDown) {
+                    ScriptPluginAgentHistoryActionRow(WcxNavIcons.MoveDown, "下移", enabled = canMoveDown) {
                         movedSessions(actionSession, 1)?.let { next ->
                             orderedSessions = next
                             onCommitOrder(next)
@@ -8411,21 +8411,21 @@ private fun ScriptPluginAgentHistoryDrawer(
                         actionSessionId = null
                     }
                     ScriptPluginAgentHistoryActionRow(
-                        NavIcons.Pin,
+                        WcxNavIcons.Pin,
                         if (actionSession.pinned) "取消置顶" else "置顶聊天"
                     ) {
                         onSetPinned(actionSession, !actionSession.pinned)
                         actionSessionId = null
                     }
                     ScriptPluginAgentHistoryActionRow(
-                        if (actionSession.locked) NavIcons.Unlock else NavIcons.Lock,
+                        if (actionSession.locked) WcxNavIcons.Unlock else WcxNavIcons.Lock,
                         if (actionSession.locked) "解锁聊天" else "锁定聊天"
                     ) {
                         onSetLocked(actionSession, !actionSession.locked)
                         actionSessionId = null
                     }
                     ScriptPluginAgentHistoryActionRow(
-                        NavIcons.Delete,
+                        WcxNavIcons.Delete,
                         if (actionSession.locked) "删除（已锁定）" else "删除",
                         destructive = true,
                         enabled = !actionSession.locked
@@ -8490,7 +8490,7 @@ private fun ScriptPluginAgentHistoryDrawer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
-                        imageVector = NavIcons.Swipe,
+                        imageVector = WcxNavIcons.Swipe,
                         contentDescription = null,
                         colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                         modifier = Modifier.size(18.dp)
@@ -8702,7 +8702,7 @@ private fun ScriptPluginAgentHistoryItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                imageVector = NavIcons.Drag,
+                imageVector = WcxNavIcons.Drag,
                 contentDescription = "长按拖动排序",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(22.dp)
@@ -8771,7 +8771,7 @@ private fun ScriptPluginAgentHistoryItem(
             }
             if (session.pinned) {
                 Image(
-                    imageVector = NavIcons.Pin,
+                    imageVector = WcxNavIcons.Pin,
                     contentDescription = "已置顶",
                     colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
                     modifier = Modifier.padding(start = 6.dp).size(17.dp)
@@ -8779,7 +8779,7 @@ private fun ScriptPluginAgentHistoryItem(
             }
             if (session.locked) {
                 Image(
-                    imageVector = NavIcons.Lock,
+                    imageVector = WcxNavIcons.Lock,
                     contentDescription = "已锁定",
                     colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                     modifier = Modifier.padding(start = 6.dp).size(17.dp)
@@ -8931,8 +8931,8 @@ private fun ScriptPluginAgentQuickOptionsDialog(
                         "始终允许并自动提交"
                     },
                     options = listOf(
-                        PopupChoice("每次询问", ScriptPluginAgentSettings.WRITE_APPROVAL_ASK),
-                        PopupChoice("始终允许", ScriptPluginAgentSettings.WRITE_APPROVAL_ALWAYS_ALLOW)
+                        WcxPopupChoice("每次询问", ScriptPluginAgentSettings.WRITE_APPROVAL_ASK),
+                        WcxPopupChoice("始终允许", ScriptPluginAgentSettings.WRITE_APPROVAL_ALWAYS_ALLOW)
                     ),
                     currentValue = workspaceWriteApprovalMode,
                     onValueChanged = onWorkspaceWriteApprovalChanged
@@ -8979,7 +8979,7 @@ private fun ScriptPluginAgentQuickOptionsDialog(
 
 @Composable
 private fun ScriptPluginAgentPendingMessagePanel(
-    messages: List<ScriptPluginAgentPendingMessage>,
+    messages: List<WcxScriptPluginAgentPendingMessage>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onEdit: (Long) -> Unit,
@@ -9006,7 +9006,7 @@ private fun ScriptPluginAgentPendingMessagePanel(
                 modifier = Modifier.weight(1f)
             )
             Image(
-                imageVector = if (expanded) NavIcons.MoveUp else NavIcons.MoveDown,
+                imageVector = if (expanded) WcxNavIcons.MoveUp else WcxNavIcons.MoveDown,
                 contentDescription = if (expanded) "收起待发送消息" else "展开待发送消息",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(18.dp)
@@ -9033,15 +9033,15 @@ private fun ScriptPluginAgentPendingMessagePanel(
                                 modifier = Modifier.weight(1f)
                             )
                             ScriptPluginAgentPendingMessageAction(
-                                icon = NavIcons.Edit,
+                                icon = WcxNavIcons.Edit,
                                 description = "编辑待发送消息"
                             ) { onEdit(message.id) }
                             ScriptPluginAgentPendingMessageAction(
-                                icon = NavIcons.Send,
+                                icon = WcxNavIcons.Send,
                                 description = "立即发送"
                             ) { onSendNow(message.id) }
                             ScriptPluginAgentPendingMessageAction(
-                                icon = NavIcons.Delete,
+                                icon = WcxNavIcons.Delete,
                                 description = "删除待发送消息"
                             ) { onDelete(message.id) }
                         }
@@ -9098,7 +9098,7 @@ private fun ScriptPluginAgentQuickChoice(
             modifier = Modifier.weight(1f)
         )
         Image(
-            imageVector = NavIcons.MoveDown,
+            imageVector = WcxNavIcons.MoveDown,
             contentDescription = null,
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
             modifier = Modifier.padding(start = 3.dp).size(14.dp)
@@ -9111,7 +9111,7 @@ private fun ScriptPluginAgentComposer(
     value: String,
     attachments: List<ScriptPluginAgentAttachment>,
     quotedMessage: ScriptPluginAgentQuotedMessage?,
-    pendingMessages: List<ScriptPluginAgentPendingMessage>,
+    pendingMessages: List<WcxScriptPluginAgentPendingMessage>,
     pendingMessagesExpanded: Boolean,
     activeProfileName: String,
     activeModel: String,
@@ -9175,7 +9175,7 @@ private fun ScriptPluginAgentComposer(
                 onClick = onOpenModelPicker
             )
             Image(
-                imageVector = NavIcons.Settings,
+                imageVector = WcxNavIcons.Settings,
                 contentDescription = "快捷选项",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.size(28.dp)
@@ -9207,7 +9207,7 @@ private fun ScriptPluginAgentComposer(
                             modifier = Modifier.sizeIn(maxWidth = 180.dp)
                         )
                         Image(
-                            imageVector = NavIcons.Close,
+                            imageVector = WcxNavIcons.Close,
                             contentDescription = "移除附件",
                             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                             modifier = Modifier.padding(start = 4.dp).size(18.dp)
@@ -9227,7 +9227,7 @@ private fun ScriptPluginAgentComposer(
             verticalAlignment = Alignment.Bottom
         ) {
             Image(
-                imageVector = NavIcons.Attach,
+                imageVector = WcxNavIcons.Attach,
                 contentDescription = "添加附件",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier.padding(end = 8.dp, bottom = 1.dp).size(24.dp)
@@ -9259,7 +9259,7 @@ private fun ScriptPluginAgentComposer(
             )
             if (generating) {
                 Image(
-                    imageVector = NavIcons.Stop,
+                    imageVector = WcxNavIcons.Stop,
                     contentDescription = "停止生成",
                     colorFilter = ColorFilter.tint(Color(0xFFD93025)),
                     modifier = Modifier.padding(start = 6.dp).size(30.dp)
@@ -9271,7 +9271,7 @@ private fun ScriptPluginAgentComposer(
             }
             if (!generating || canSend) {
                 Image(
-                    imageVector = if (generating) NavIcons.Add else NavIcons.Send,
+                    imageVector = if (generating) WcxNavIcons.Add else WcxNavIcons.Send,
                     contentDescription = if (generating) "加入待发送队列" else "发送",
                     colorFilter = ColorFilter.tint(actionTint),
                     modifier = Modifier.padding(start = 6.dp)
@@ -9308,10 +9308,10 @@ private fun ClickHintTag() {
     )
 }
 
-// ---- Hchat 支撑工具（NavIcons / 返回处理 / 按压反馈）----
+// ---- Hchat 支撑工具（WcxNavIcons / 返回处理 / 按压反馈）----
 private const val PRESS_RELEASE_DELAY_MS = 110L
 
-private object NavIcons {
+private object WcxNavIcons {
     val Back: ImageVector = navIcon(
         name = "Rounded.ArrowBack",
         path = "M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z"
@@ -9471,7 +9471,7 @@ private object NavIcons {
     }
 }
 
-private class SettingsBackHandlerRegistry {
+private class WcxSettingsBackHandlerRegistry {
     private val handlers = LinkedHashMap<Any, () -> Unit>()
 
     @Synchronized
@@ -9497,7 +9497,7 @@ private class SettingsBackHandlerRegistry {
     }
 }
 
-private val LocalSettingsBackHandlerRegistry = staticCompositionLocalOf<SettingsBackHandlerRegistry?> { null }
+private val LocalSettingsBackHandlerRegistry = staticCompositionLocalOf<WcxSettingsBackHandlerRegistry?> { null }
 
 @Composable
 private fun RegisterSettingsBackHandler(onBack: (() -> Unit)?) {
@@ -9555,14 +9555,14 @@ private fun rememberPressFeedbackColor(pressed: Boolean): Color {
     ).value
 }
 
-// ---- 缺失组件：PopupChoice / PopupChoiceRow（WCX 侧简化实现，签名与 Hchat 一致）----
-internal data class PopupChoice<T>(val label: String, val value: T)
+// ---- 缺失组件：WcxPopupChoice / PopupChoiceRow（WCX 侧简化实现，签名与 Hchat 一致）----
+internal data class WcxPopupChoice<T>(val label: String, val value: T)
 
 @Composable
 internal fun PopupChoiceRow(
     title: String,
     summary: String,
-    options: List<PopupChoice<String>>,
+    options: List<WcxPopupChoice<String>>,
     currentValue: String,
     onValueChanged: (String) -> Unit,
     enabled: Boolean = true,
@@ -9612,7 +9612,7 @@ internal fun PopupChoiceRow(
 }
 
 // ---- 文件选择桥接 + Markdown 渲染（Hchat 支撑对象）----
-private object ScriptPluginAgentAttachmentPickerBridge {
+private object WcxScriptPluginAgentAttachmentPickerBridge {
     private val hookedClasses = HashSet<Class<*>>()
     private var pending: PendingResult? = null
 
@@ -9772,7 +9772,7 @@ private object ScriptPluginAgentAttachmentPickerBridge {
         pending = null
         return result
 
-private object PluginMarketExtraFilePickerBridge {
+private object WcxPluginMarketExtraFilePickerBridge {
     private val hookedClasses = HashSet<Class<*>>()
     private var pending: PendingResult? = null
 
@@ -9890,7 +9890,7 @@ private object PluginMarketExtraFilePickerBridge {
 }
 
 
-private object MarkdownUi {
+private object WcxMarkdownUi {
 
 @Composable
 fun Content(
@@ -9902,7 +9902,7 @@ fun Content(
 ) {
     val lines = markdown.replace("\r\n", "\n").replace('\r', '\n').lines()
     var inCodeBlock = false
-    var inlineState = MarkdownInlineState()
+    var inlineState = WcxMarkdownInlineState()
     val codeLines = ArrayList<String>()
     Column(modifier = Modifier.fillMaxWidth().padding(contentPadding)) {
         lines.forEach { rawLine ->

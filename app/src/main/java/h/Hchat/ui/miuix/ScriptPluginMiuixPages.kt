@@ -136,7 +136,7 @@ private val MARKDOWN_LINK_REGEX = Regex("""\[([^\]]+)]\(([^)\s]+)\)""")
 private val NAVIGATION_BUTTON_MIN_INSET = 24.dp
 private val NAVIGATION_BUTTON_EXTRA_GAP = 8.dp
 
-private object NavIcons {
+private object WcxNavIcons {
     val Back: ImageVector = navIcon(
         name = "Rounded.ArrowBack",
         path = "M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z"
@@ -296,7 +296,7 @@ private object NavIcons {
     }
 }
 
-private class SettingsBackHandlerRegistry {
+private class WcxSettingsBackHandlerRegistry {
     private val handlers = LinkedHashMap<Any, () -> Unit>()
 
     @Synchronized
@@ -322,7 +322,7 @@ private class SettingsBackHandlerRegistry {
     }
 }
 
-private val LocalSettingsBackHandlerRegistry = staticCompositionLocalOf<SettingsBackHandlerRegistry?> { null }
+private val LocalSettingsBackHandlerRegistry = staticCompositionLocalOf<WcxSettingsBackHandlerRegistry?> { null }
 
 @Composable
 private fun RegisterSettingsBackHandler(onBack: (() -> Unit)?) {
@@ -355,7 +355,7 @@ private fun Intent.preferSystemDocumentsUi(context: Context): Intent {
     return this
 }
 
-private object ScriptPluginDocumentBridge {
+private object WcxScriptPluginDocumentBridge {
     private val hookedClasses = HashSet<Class<*>>()
     private var exportCallback: ((Uri) -> Unit)? = null
     private var importCallback: ((Uri) -> Unit)? = null
@@ -440,7 +440,7 @@ private object ScriptPluginDocumentBridge {
                         return
                     }
                     val owner = param.thisObject as? Activity ?: return
-                    val callback = synchronized(this@ScriptPluginDocumentBridge) {
+                    val callback = synchronized(this@WcxScriptPluginDocumentBridge) {
                         if (requestCode == SCRIPT_PLUGIN_EXPORT_REQUEST_CODE) {
                             val matches = exportOwner?.get() === owner
                             exportCallback.takeIf { matches }.also {
@@ -523,28 +523,28 @@ private fun rememberPressFeedbackColor(pressed: Boolean): Color {
     ).value
 }
 
-private data class FeatureGroupEntry(
+private data class WcxFeatureGroupEntry(
     val title: String,
     val providers: List<FeatureSettingsProvider>
 )
 
-private data class FeatureSearchResult(
+private data class WcxFeatureSearchResult(
     val provider: FeatureSettingsProvider,
-    val group: FeatureGroupEntry?,
+    val group: WcxFeatureGroupEntry?,
     val summary: String
 )
 
-private data class TemplateVariable(
+private data class WcxTemplateVariable(
     val token: String,
     val label: String
 )
 
 private sealed class DetailPage {
     object Search : DetailPage()
-    data class FeatureGroup(val group: FeatureGroupEntry) : DetailPage()
+    data class FeatureGroup(val group: WcxFeatureGroupEntry) : DetailPage()
     data class Feature(
         val provider: FeatureSettingsProvider,
-        val sourceGroup: FeatureGroupEntry? = null,
+        val sourceGroup: WcxFeatureGroupEntry? = null,
         val returnToSearch: Boolean = false
     ) : DetailPage()
     data class ScriptPluginAgent(val parentFeature: Feature? = null) : DetailPage()
@@ -570,7 +570,7 @@ private fun ClickHintTag() {
     )
 }
 
-private object ScriptPluginSettingsMiuixContent {
+private object WcxScriptPluginSettingsMiuixContent {
 
 @Composable
 fun ScriptPluginSettingsContent(
@@ -946,7 +946,7 @@ fun ScriptPluginManagerPage(
             Toast.makeText(context, "无法打开文件选择器", Toast.LENGTH_SHORT).show()
             return
         }
-        ScriptPluginDocumentBridge.launchImport(activity) { uri ->
+        WcxScriptPluginDocumentBridge.launchImport(activity) { uri ->
             if (!pageActive.get()) return@launchImport
             busyText = "正在检查导入包"
             Thread({
@@ -1012,7 +1012,7 @@ fun ScriptPluginManagerPage(
             item {
                 SettingsCard {
                     ScriptPluginManagerCommandRow(
-                        icon = NavIcons.Import,
+                        icon = WcxNavIcons.Import,
                         title = "导入插件",
                         summary = "从 ZIP 文件导入，导入后默认关闭",
                         enabled = busyText.isEmpty(),
@@ -1438,7 +1438,7 @@ private fun ScriptPluginManagerRow(
                 )
                 if (item.pinned) {
                     Image(
-                        imageVector = NavIcons.Pin,
+                        imageVector = WcxNavIcons.Pin,
                         contentDescription = "已置顶",
                         colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
                         modifier = Modifier.padding(start = 6.dp).size(16.dp)
@@ -1458,7 +1458,7 @@ private fun ScriptPluginManagerRow(
             )
         }
         Image(
-            imageVector = NavIcons.More,
+            imageVector = WcxNavIcons.More,
             contentDescription = "管理插件",
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
             modifier = Modifier.padding(start = 8.dp).size(32.dp)
@@ -1469,7 +1469,7 @@ private fun ScriptPluginManagerRow(
                 .padding(5.dp)
         )
         Image(
-            imageVector = NavIcons.Drag,
+            imageVector = WcxNavIcons.Drag,
             contentDescription = if (dragEnabled) "长按拖动排序" else "搜索时不可排序",
             colorFilter = ColorFilter.tint(
                 MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = if (dragEnabled) 1f else 0.35f)
@@ -1540,13 +1540,13 @@ private fun ScriptPluginActionDialog(
         content = {
             Column {
                 ScriptPluginDialogActionRow(
-                    icon = NavIcons.Pin,
+                    icon = WcxNavIcons.Pin,
                     text = if (pinned) "取消置顶" else "置顶",
                     onClick = { onPinChanged(!pinned) }
                 )
-                ScriptPluginDialogActionRow(NavIcons.Edit, "重命名", onClick = onRename)
-                ScriptPluginDialogActionRow(NavIcons.Export, "导出", onClick = onExport)
-                ScriptPluginDialogActionRow(NavIcons.Delete, "删除", destructive = true, onClick = onDelete)
+                ScriptPluginDialogActionRow(WcxNavIcons.Edit, "重命名", onClick = onRename)
+                ScriptPluginDialogActionRow(WcxNavIcons.Export, "导出", onClick = onExport)
+                ScriptPluginDialogActionRow(WcxNavIcons.Delete, "删除", destructive = true, onClick = onDelete)
             }
         }
     )
@@ -1780,7 +1780,7 @@ private fun launchScriptPluginExport(
         return
     }
     val fileName = scriptPluginExportFileName(plugins)
-    ScriptPluginDocumentBridge.launchExport(activity, fileName) { uri ->
+    WcxScriptPluginDocumentBridge.launchExport(activity, fileName) { uri ->
         Thread({
             val result = runCatching {
                 context.contentResolver.openOutputStream(uri, "w")?.use { output ->
@@ -1921,7 +1921,7 @@ private fun ScriptPluginRow(
         }
         if (showSettings) {
             Image(
-                imageVector = NavIcons.Settings,
+                imageVector = WcxNavIcons.Settings,
                 contentDescription = "插件设置",
                 colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                 modifier = Modifier
@@ -1931,7 +1931,7 @@ private fun ScriptPluginRow(
             )
         }
         Image(
-            imageVector = NavIcons.More,
+            imageVector = WcxNavIcons.More,
             contentDescription = "管理插件",
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
             modifier = Modifier
@@ -2150,7 +2150,7 @@ fun ScriptPluginReadmeDialog(
                             modifier = Modifier.padding(vertical = 10.dp)
                         )
                     } else {
-                        MarkdownUi.Content(context, readme)
+                        WcxMarkdownUi.Content(context, readme)
                     }
                 }
                 TextButton(
@@ -2166,7 +2166,7 @@ fun ScriptPluginReadmeDialog(
 
 }
 
-private object MarkdownUi {
+private object WcxMarkdownUi {
 
 @Composable
 fun Content(
@@ -2178,7 +2178,7 @@ fun Content(
 ) {
     val lines = markdown.replace("\r\n", "\n").replace('\r', '\n').lines()
     var inCodeBlock = false
-    var inlineState = MarkdownInlineState()
+    var inlineState = WcxMarkdownInlineState()
     val codeLines = ArrayList<String>()
     Column(modifier = Modifier.fillMaxWidth().padding(contentPadding)) {
         lines.forEach { rawLine ->
@@ -2211,9 +2211,9 @@ fun Content(
 private fun MarkdownLine(
     context: Context,
     line: String,
-    inlineState: MarkdownInlineState,
+    inlineState: WcxMarkdownInlineState,
     bodyFontSize: androidx.compose.ui.unit.TextUnit = 13.sp
-): MarkdownInlineState {
+): WcxMarkdownInlineState {
     val trimmed = line.trim()
     return when {
         trimmed.isBlank() -> {
@@ -2290,10 +2290,10 @@ private fun MarkdownLine(
 private fun MarkdownBullet(
     context: Context,
     text: String,
-    inlineState: MarkdownInlineState,
+    inlineState: WcxMarkdownInlineState,
     marker: String = "•",
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp
-): MarkdownInlineState {
+): WcxMarkdownInlineState {
     var nextState = inlineState
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(
@@ -2333,7 +2333,7 @@ fun CodeBlock(code: String, onCopy: ((String) -> Unit)? = null) {
                     modifier = Modifier.weight(1f)
                 )
                 Image(
-                    imageVector = NavIcons.Copy,
+                    imageVector = WcxNavIcons.Copy,
                     contentDescription = "复制代码",
                     colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurfaceVariantSummary),
                     modifier = Modifier.size(26.dp).clip(RoundedCornerShape(4.dp))
@@ -2361,19 +2361,19 @@ fun Text(
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
     fontWeight: FontWeight? = null
 ) {
-    MarkdownTextResult(context, text, MarkdownInlineState(), modifier, color, fontSize, fontWeight)
+    MarkdownTextResult(context, text, WcxMarkdownInlineState(), modifier, color, fontSize, fontWeight)
 }
 
 @Composable
 private fun MarkdownTextResult(
     context: Context,
     text: String,
-    inlineState: MarkdownInlineState,
+    inlineState: WcxMarkdownInlineState,
     modifier: Modifier = Modifier,
     color: Color = MiuixTheme.colorScheme.onSurface,
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
     fontWeight: FontWeight? = null
-): MarkdownInlineState {
+): WcxMarkdownInlineState {
     val primary = MiuixTheme.colorScheme.primary
     val result = remember(text, primary, inlineState.bold) {
         buildMarkdownAnnotatedString(text, primary, inlineState)
@@ -2391,30 +2391,30 @@ private fun MarkdownTextResult(
     return result.state
 }
 
-private data class MarkdownInlineState(val bold: Boolean = false)
+private data class WcxMarkdownInlineState(val bold: Boolean = false)
 
-private data class MarkdownInlineResult(
+private data class WcxMarkdownInlineResult(
     val text: AnnotatedString,
-    val state: MarkdownInlineState
+    val state: WcxMarkdownInlineState
 )
 
 private fun buildMarkdownAnnotatedString(
     text: String,
     accent: Color,
-    initialState: MarkdownInlineState
-): MarkdownInlineResult {
+    initialState: WcxMarkdownInlineState
+): WcxMarkdownInlineResult {
     var state = initialState
     val annotated = buildAnnotatedString {
         state = appendInlineMarkdown(text, accent, state)
     }
-    return MarkdownInlineResult(annotated, state)
+    return WcxMarkdownInlineResult(annotated, state)
 }
 
 private fun AnnotatedString.Builder.appendInlineMarkdown(
     text: String,
     accent: Color,
-    initialState: MarkdownInlineState
-): MarkdownInlineState {
+    initialState: WcxMarkdownInlineState
+): WcxMarkdownInlineState {
     var state = initialState
     var segmentStart = 0
     MARKDOWN_LINK_REGEX.findAll(text).forEach { match ->
@@ -2445,8 +2445,8 @@ private fun AnnotatedString.Builder.appendInlineMarkdown(
 private fun AnnotatedString.Builder.appendInlineMarkdownSegment(
     text: String,
     accent: Color,
-    initialState: MarkdownInlineState
-): MarkdownInlineState {
+    initialState: WcxMarkdownInlineState
+): WcxMarkdownInlineState {
     var state = initialState
     var index = 0
     while (index < text.length) {
@@ -2479,7 +2479,7 @@ private fun AnnotatedString.Builder.appendInlineMarkdownSegment(
 private fun AnnotatedString.Builder.appendStyledInline(
     value: String,
     accent: Color,
-    state: MarkdownInlineState,
+    state: WcxMarkdownInlineState,
     link: Boolean
 ) {
     val style = SpanStyle(
@@ -2697,7 +2697,7 @@ fun ScriptPluginMiuixTabContent(
     onOpenAgent: () -> Unit = {},
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit = {},
 ) {
-    ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
+    WcxScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
         context = context,
         onOpenReadme = onOpenReadme,
         onOpenMarket = onOpenMarket,
@@ -2709,7 +2709,7 @@ fun ScriptPluginMiuixTabContent(
 /** WCX 入口：脚本管理页（Tab 内导航）。 */
 @Composable
 fun ScriptPluginManagerTabPage(context: Context, onBack: () -> Unit) {
-    ScriptPluginSettingsMiuixContent.ScriptPluginManagerPage(context = context, onBack = onBack)
+    WcxScriptPluginSettingsMiuixContent.ScriptPluginManagerPage(context = context, onBack = onBack)
 }
 
 /** WCX 入口：脚本 README 弹窗（自包含实现，不依赖页面内部的私有 composable）。 */
