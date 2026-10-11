@@ -28325,7 +28325,7 @@ private fun ScriptPluginMiuixPage(
     }
 }
 
-private object PluginMarketUi {
+internal object PluginMarketUi {
 
 private enum class PluginMarketUploadPhase {
     QUEUED,

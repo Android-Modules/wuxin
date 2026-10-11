@@ -1,117 +1,82 @@
 package com.Johnny.wcx.activity.settings
 
-import android.content.Context
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.Johnny.wcx.features.hchat.HchatScriptBootstrap
-import com.Johnny.wcx.utils.HostInfo
-import com.Johnny.wcx.utils.TargetProcesses
-import com.Johnny.wcx.utils.WeLogger
-import h.Hchat.hooks.api.core.WeChatApis
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
-import h.Hchat.ui.SettingsUI
-import h.Hchat.ui.miuix.HchatMiuixTheme
-import h.Hchat.ui.miuix.ScriptPluginSettingsMiuixContent
-
-private const val SCRIPTS_TAG = "ScriptsPager"
+import h.Hchat.ui.miuix.PluginMarketUi
+import h.Hchat.ui.miuix.ScriptPluginAgentUi
+import h.Hchat.ui.miuix.ScriptPluginManagerTabPage
+import h.Hchat.ui.miuix.ScriptPluginMiuixTabContent
+import h.Hchat.ui.miuix.ScriptPluginReadmeTabDialog
 
 /**
- * 「脚本」页。
+ * 「脚本」独立页（WCX 自建版本，对齐 v274~v276 那套"能用"的实现）。
  *
- * 直接内嵌渲染 Hchat 的脚本插件内容页（与 Hchat 主设置页的「脚本插件」Tab 一致）：
- * 插件总开关 + 本地插件列表 + 插件 Agent / 在线插件 / 本地插件管理入口。
+ * 结构：
+ * - route 0：内容页（插件总开关 / 插件 Agent / 在线插件 / 本地插件管理 / 本地插件列表）
+ * - route 1：本地插件管理页（`ScriptPluginManagerTabPage`）
+ * - route 2：在线插件市场页（Hchat `PluginMarketUi.ScriptPluginMarketPage`，走 Hchat 市场服务器）
+ * - route 3：脚本 Agent 工作台（Hchat `ScriptPluginAgentUi.ScriptPluginAgentWorkspacePage`）
  *
- * 顶部额外放了一张「运行时诊断」卡片（临时，便于定位「数据库未就绪」），
- * 会显示当前进程、微信版本、引导层走到哪一步、数据库是否就绪、插件目录。
+ * 子页面全部**内联渲染**（而不是"浮层叠加到 Activity"），避免浮层机制在 WCX 里点击无反应。
+ * 数据与逻辑走已迁移的 Hchat 脚本子系统（ScriptPluginRuntime / ScriptPluginManager）。
  */
 @Composable
 fun ScriptsPager() {
     val context = LocalContext.current
+    var route by remember { mutableStateOf(0) }
     var readmePlugin by remember { mutableStateOf<ScriptPluginRuntime.ScriptPlugin?>(null) }
-    var diagTick by remember { mutableStateOf(0) }
 
-    HchatMiuixTheme(context) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            RuntimeDiagnosticsCard(context, diagTick) {
-                diagTick++
-                HchatScriptBootstrap.reinstall()
+    when (route) {
+        1 -> ScriptPluginManagerTabPage(
+            context = context,
+            onBack = { route = 0 },
+        )
+        2 -> PluginMarketUi.ScriptPluginMarketPage(
+            context = context,
+            onBack = { route = 0 },
+        )
+        3 -> ScriptPluginAgentUi.ScriptPluginAgentWorkspacePage(
+            context = context,
+            onBack = { route = 0 },
+            onExitHandlerChanged = {},
+        )
+        else -> MiuixListScaffold(title = "脚本", blurTopBar = false) {
+            item {
+                // 父级 Pager 与内层 TopAppBar 各有一层 backdrop；内容滚动越界会被采样成顶部灰块，这里裁剪掉溢出绘制。
+                Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+                    ScriptPluginMiuixTabContent(
+                        context = context,
+                        onOpenManager = { route = 1 },
+                        onOpenReadme = { plugin -> readmePlugin = plugin },
+                        onOpenMarket = { route = 2 },
+                        onOpenAgent = { route = 3 },
+                    )
+                }
             }
-            Spacer(Modifier.height(10.dp))
-            ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
-                context = context,
-                onOpenReadme = { readmePlugin = it },
-                onOpenMarket = { safeOpen("打开在线插件") { SettingsUI.showScriptPluginMarket(context) } },
-                onOpenAgent = { safeOpen("打开插件 Agent") { SettingsUI.showScriptPluginAgent(context) } },
-                onOpenManager = { safeOpen("打开本地插件管理") { SettingsUI.showScriptPluginManager(context) } }
-            )
-        }
-
-        readmePlugin?.let { plugin ->
-            ScriptPluginSettingsMiuixContent.ScriptPluginReadmeDialog(
-                context = context,
-                plugin = plugin,
-                onClose = { readmePlugin = null }
-            )
+            item {
+                Spacer(Modifier.height(CONTENT_BOTTOM_INSET))
+            }
         }
     }
-}
 
-private inline fun safeOpen(what: String, block: () -> Unit) {
-    runCatching { block() }.onFailure { WeLogger.e(SCRIPTS_TAG, "$what 失败", it) }
-}
-
-@Composable
-private fun RuntimeDiagnosticsCard(context: Context, tick: Int, onReinstall: () -> Unit) {
-    val databaseReady = remember(tick) {
-        runCatching { WeChatApis.database() != null }.getOrDefault(false)
-    }
-    val scriptDir = remember(tick) {
-        runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }.getOrDefault("?")
-    }
-    val lines = listOf(
-        "进程: ${TargetProcesses.currentName}（主进程=${TargetProcesses.isInMain}）",
-        "微信: ${HostInfo.versionName} (${HostInfo.versionCode})",
-        "引导: ${HchatScriptBootstrap.status}",
-        "数据库: ${if (databaseReady) "就绪" else "未就绪"}",
-        "插件目录: $scriptDir"
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0x1F607D8B), RoundedCornerShape(12.dp))
-            .padding(12.dp)
-    ) {
-        Text(text = "脚本运行时诊断", color = Color(0xFF2196F3), fontSize = 14.sp)
-        lines.forEach { line ->
-            Text(text = line, color = Color(0xFF888888), fontSize = 12.sp)
-        }
-        TextButton(onClick = onReinstall) {
-            Text(text = "重新初始化运行时", fontSize = 13.sp)
-        }
+    val pending = readmePlugin
+    if (pending != null) {
+        ScriptPluginReadmeTabDialog(
+            context = context,
+            plugin = pending,
+            onClose = { readmePlugin = null },
+        )
     }
 }
