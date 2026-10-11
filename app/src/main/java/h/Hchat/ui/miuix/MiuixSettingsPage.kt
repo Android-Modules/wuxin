@@ -2580,7 +2580,7 @@ private object ConfigImportExportBridge {
                 type = "*/*"
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            activity.startActivityForResult(Intent.createChooser(fallback, "选择 Hchat 配置文件"), CONFIG_IMPORT_REQUEST_CODE)
+            activity.startActivityForResult(Intent.createChooser(fallback, "选择 WCX 配置文件"), CONFIG_IMPORT_REQUEST_CODE)
         }
     }
 
@@ -2952,8 +2952,8 @@ private fun MainSettingsPage(
     }
     val activeTab = tabs.getOrElse(pagerState.currentPage) { MainTab.PRACTICAL }
     PageScaffold(
-        title = "Hchat",
-        largeTitle = "Hchat",
+        title = "WCX",
+        largeTitle = "WCX",
         scrollBehavior = scrollBehavior,
         bottomBar = {
             MainNavigationBar(
@@ -3074,7 +3074,7 @@ private fun MainSettingsPage(
                         item {
                             Text(
                                 modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                                text = "Hchat",
+                                text = "WCX",
                                 color = MiuixTheme.colorScheme.onBackgroundVariant,
                                 textAlign = TextAlign.Center
                             )
@@ -17017,11 +17017,11 @@ private fun FakeLocationMiuixPage(
                     }
                     InsetDivider()
                     InfoRow("当前纬度", latitude) {
-                        copyFakeLocationCoordinate(context, "Hchat 纬度", latitude)
+                        copyFakeLocationCoordinate(context, "WCX 纬度", latitude)
                     }
                     InsetDivider()
                     InfoRow("当前经度", longitude) {
-                        copyFakeLocationCoordinate(context, "Hchat 经度", longitude)
+                        copyFakeLocationCoordinate(context, "WCX 经度", longitude)
                     }
                 }
             }
