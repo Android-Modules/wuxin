@@ -195,6 +195,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.RowScope
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
+import android.content.Intent
+import android.net.Uri
 
 
 private object PluginMarketUi {
@@ -9605,6 +9607,326 @@ internal fun PopupChoiceRow(
                     }
                 }
             }
+        }
+    }
+}
+
+// ---- 文件选择桥接 + Markdown 渲染（Hchat 支撑对象）----
+private object ScriptPluginAgentAttachmentPickerBridge {
+    private val hookedClasses = HashSet<Class<*>>()
+    private var pending: PendingResult? = null
+
+    @Synchronized
+    fun launch(
+        activity: Activity,
+        directory: File,
+        onResult: (List<ScriptPluginAgentAttachment>) -> Unit
+    ) {
+        pending = PendingResult(activity, directory.apply { mkdirs() }, onResult)
+        hookActivityResult(activity.javaClass)
+        hookActivityResult(Activity::class.java)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }.preferSystemDocumentsUi(activity)
+        try {
+            activity.startActivityForResult(intent, SCRIPT_AGENT_ATTACHMENT_REQUEST_CODE)
+        } catch (_: Throwable) {
+            val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivityForResult(
+                Intent.createChooser(fallback, "选择文件或图片"),
+                SCRIPT_AGENT_ATTACHMENT_REQUEST_CODE
+            )
+        }
+    }
+
+    @Synchronized
+    private fun hookActivityResult(clazz: Class<*>) {
+        if (hookedClasses.contains(clazz)) return
+        try {
+            XposedBridge.hookAllMethods(clazz, "onActivityResult", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val requestCode = param.args.getOrNull(0) as? Int ?: return
+                    if (requestCode != SCRIPT_AGENT_ATTACHMENT_REQUEST_CODE) return
+                    val pending = takePending() ?: return
+                    val resultCode = param.args.getOrNull(1) as? Int ?: return
+                    if (resultCode != Activity.RESULT_OK) return
+                    val data = param.args.getOrNull(2) as? Intent ?: return
+                    val activity = pending.activity
+                    val directory = pending.directory
+                    val uris = pickedUris(data)
+                    val persistentUris = uris.filter { uri ->
+                        takeReadPermission(activity, data, uri)
+                    }.mapTo(HashSet()) { it.toString() }
+                    Thread({
+                        val attachments = uris.mapNotNull { uri ->
+                            copyAttachment(
+                                activity,
+                                directory,
+                                uri,
+                                uri.toString() in persistentUris
+                            )
+                        }.distinctBy { it.sourceUri.ifBlank { it.path } }
+                        if (attachments.isNotEmpty()) {
+                            Handler(Looper.getMainLooper()).post { pending.callback(attachments) }
+                        }
+                    }, "Hchat-Agent-Attachment-Copy").start()
+                }
+            })
+            hookedClasses.add(clazz)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun pickedUris(data: Intent): List<Uri> {
+        val result = ArrayList<Uri>()
+        data.data?.let(result::add)
+        val clip = data.clipData
+        if (clip != null) {
+            for (index in 0 until clip.itemCount) {
+                runCatching { clip.getItemAt(index)?.uri }.getOrNull()?.let(result::add)
+            }
+        }
+        return result.distinct()
+    }
+
+    private fun takeReadPermission(activity: Activity, data: Intent, uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        val resolver = activity.contentResolver
+        if (runCatching {
+                resolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+            }.getOrDefault(false)
+        ) {
+            return true
+        }
+        val flags = data.flags and
+            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        if ((flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0 ||
+            (flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) == 0
+        ) {
+            return false
+        }
+        return runCatching {
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            resolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        }.getOrDefault(false)
+    }
+
+    private fun copyAttachment(
+        context: Context,
+        directory: File,
+        uri: Uri,
+        persistentAccess: Boolean
+    ): ScriptPluginAgentAttachment? {
+        var target: File? = null
+        return runCatching {
+            val displayName = queryDisplayName(context, uri)
+                ?: uri.lastPathSegment
+                ?: "attachment"
+            val safeName = displayName.replace(Regex("""[\\/:*?"<>|]"""), "_").ifBlank { "attachment" }
+            val copyId = java.util.UUID.randomUUID().toString().substring(0, 8)
+            val outputFile = File(directory, "${System.currentTimeMillis()}_${copyId}_$safeName")
+            target = outputFile
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                outputFile.outputStream().use { output ->
+                    val buffer = ByteArray(32 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
+            } ?: return null
+            val attachment = ScriptPluginAgentAttachment(
+                name = displayName,
+                path = outputFile.absolutePath,
+                mimeType = context.contentResolver.getType(uri).orEmpty().ifBlank { "application/octet-stream" },
+                size = outputFile.length(),
+                sourceUri = uri.toString().takeIf { persistentAccess }.orEmpty()
+            )
+            attachment.takeIf { outputFile.isFile && outputFile.length() > 0L }
+                ?: run {
+                    outputFile.delete()
+                    null
+                }
+        }.getOrElse {
+            target?.delete()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, it.message ?: "读取附件失败", Toast.LENGTH_SHORT).show()
+            }
+            null
+        }
+    }
+
+    @Synchronized
+    private fun takePending(): PendingResult? {
+        val result = pending
+        pending = null
+        return result
+
+private object PluginMarketExtraFilePickerBridge {
+    private val hookedClasses = HashSet<Class<*>>()
+    private var pending: PendingResult? = null
+
+    @Synchronized
+    fun launch(activity: Activity, onResult: (List<PluginMarketFile>) -> Unit) {
+        pending = PendingResult(activity, onResult)
+        hookActivityResult(activity.javaClass)
+        hookActivityResult(Activity::class.java)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }.preferSystemDocumentsUi(activity)
+        try {
+            activity.startActivityForResult(intent, PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE)
+        } catch (_: Throwable) {
+            val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivityForResult(
+                Intent.createChooser(fallback, "选择插件附加文件"),
+                PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE
+            )
+        }
+    }
+
+    @Synchronized
+    private fun hookActivityResult(clazz: Class<*>) {
+        if (!hookedClasses.add(clazz)) return
+        runCatching {
+            XposedBridge.hookAllMethods(clazz, "onActivityResult", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val requestCode = param.args.getOrNull(0) as? Int ?: return
+                    if (requestCode != PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE) return
+                    val result = takePending() ?: return
+                    val resultCode = param.args.getOrNull(1) as? Int ?: return
+                    if (resultCode != Activity.RESULT_OK) return
+                    val data = param.args.getOrNull(2) as? Intent ?: return
+                    val uris = pickedUris(data)
+                    if (uris.isEmpty()) return
+                    Thread({
+                        val files = uris.mapNotNull { uri -> readFile(result.activity, uri) }
+                            .distinctBy { it.name.lowercase(Locale.ROOT) }
+                        if (files.isNotEmpty()) {
+                            Handler(Looper.getMainLooper()).post { result.callback(files) }
+                        }
+                    }, "Hchat-Plugin-Market-Files").start()
+                }
+            })
+        }.onFailure {
+            hookedClasses.remove(clazz)
+        }
+    }
+
+    private fun pickedUris(data: Intent): List<Uri> {
+        val result = ArrayList<Uri>()
+        data.data?.let(result::add)
+        data.clipData?.let { clip ->
+            for (index in 0 until clip.itemCount) {
+                runCatching { clip.getItemAt(index)?.uri }.getOrNull()?.let(result::add)
+            }
+        }
+        return result.distinct()
+    }
+
+    private fun readFile(activity: Activity, uri: Uri): PluginMarketFile? {
+        return runCatching {
+            val displayName = queryDisplayName(activity, uri)
+                ?.substringAfterLast('/')
+                ?.substringAfterLast('\\')
+                ?.ifBlank { null }
+                ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+            require(displayName.isNotBlank()) { "无法读取所选文件名" }
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                activity.contentResolver.openInputStream(uri)?.use { input ->
+                    val buffer = ByteArray(32 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= PluginMarketInstaller.MAX_EXTRA_FILE_BYTES) {
+                            "$displayName 超过 ${PluginMarketInstaller.MAX_EXTRA_FILE_BYTES / 1024} KiB"
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                } ?: error("无法打开所选文件")
+                output.toByteArray()
+            }
+            PluginMarketInstaller.createExternalFile(displayName, bytes)
+        }.getOrElse {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(activity, it.message ?: "读取附加文件失败", Toast.LENGTH_SHORT).show()
+            }
+            null
+        }
+    }
+
+    @Synchronized
+    private fun takePending(): PendingResult? {
+        val result = pending
+        pending = null
+        return result
+    }
+
+    private data class PendingResult(
+        val activity: Activity,
+        val callback: (List<PluginMarketFile>) -> Unit
+    )
+}
+
+
+private object MarkdownUi {
+
+@Composable
+fun Content(
+    context: Context,
+    markdown: String,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    bodyFontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    onCopyCode: ((String) -> Unit)? = null
+) {
+    val lines = markdown.replace("\r\n", "\n").replace('\r', '\n').lines()
+    var inCodeBlock = false
+    var inlineState = MarkdownInlineState()
+    val codeLines = ArrayList<String>()
+    Column(modifier = Modifier.fillMaxWidth().padding(contentPadding)) {
+        lines.forEach { rawLine ->
+            val line = rawLine.trimEnd()
+            if (line.trimStart().startsWith("```")) {
+                if (inCodeBlock) {
+                    CodeBlock(codeLines.joinToString("\n"), onCopyCode)
+                    codeLines.clear()
+                    inCodeBlock = false
+                } else {
+                    inCodeBlock = true
+                    codeLines.clear()
+                }
+                return@forEach
+            }
+            if (inCodeBlock) {
+                codeLines += rawLine
+                return@forEach
+            }
+            val nextState = MarkdownLine(context, line, inlineState, bodyFontSize)
+            inlineState = nextState
+        }
+        if (inCodeBlock && codeLines.isNotEmpty()) {
+            CodeBlock(codeLines.joinToString("\n"), onCopyCode)
         }
     }
 }
