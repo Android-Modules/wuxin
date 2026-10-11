@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -2585,16 +2586,50 @@ internal fun InsetDivider(start: Dp = 16.dp) {
     )
 }
 
-/** 底部操作条。 */
+/** 底部操作条（兼容 Hchat 的主/次/中三按钮签名）。 */
 @Composable
-internal fun BottomActionBar(text: String, onClick: () -> Unit) {
-    BasicComponent(onClick = onClick) {
-        Text(
-            text = text,
-            fontSize = MiuixTheme.textStyles.headline1.fontSize,
-            color = MiuixTheme.colorScheme.primary,
-            modifier = Modifier.fillMaxWidth(),
-        )
+internal fun BottomActionBar(
+    primaryText: String,
+    onPrimaryClick: () -> Unit,
+    secondaryText: String? = null,
+    onSecondaryClick: (() -> Unit)? = null,
+    middleText: String? = null,
+    onMiddleClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (secondaryText != null && onSecondaryClick != null) {
+            BottomBarButton(secondaryText, Modifier.weight(1f), false, onSecondaryClick)
+        }
+        if (middleText != null && onMiddleClick != null) {
+            BottomBarButton(middleText, Modifier.weight(1f), false, onMiddleClick)
+        }
+        BottomBarButton(primaryText, Modifier.weight(1f), true, onPrimaryClick)
+    }
+}
+
+@Composable
+private fun BottomBarButton(
+    text: String,
+    modifier: Modifier,
+    filled: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = if (filled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceVariant
+    val fg = if (filled) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.primary
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = text, color = fg, fontSize = MiuixTheme.textStyles.headline2.fontSize)
     }
 }
 
@@ -2622,6 +2657,7 @@ internal fun PageScaffold(
     largeTitle: String,
     scrollBehavior: Any? = null,
     onBack: (() -> Unit)? = null,
+    topBarActions: @Composable RowScope.() -> Unit = {},
     @Suppress("UNUSED_PARAMETER") bottomBar: (@Composable () -> Unit)? = null,
     @Suppress("UNUSED_PARAMETER") largeTitleUnused: String = largeTitle,
     content: @Composable (PaddingValues) -> Unit,
@@ -2632,14 +2668,20 @@ internal fun PageScaffold(
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        BasicComponent(onClick = onBack) {
-            Text(
-                text = if (onBack != null) "← $title" else title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = if (onBack != null) MiuixTheme.colorScheme.primary
-                else BasicComponentDefaults.titleColor().color,
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicComponent(onClick = onBack, modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (onBack != null) "← $title" else title,
+                    fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                    fontWeight = FontWeight.Medium,
+                    color = if (onBack != null) MiuixTheme.colorScheme.primary
+                    else BasicComponentDefaults.titleColor().color,
+                )
+            }
+            topBarActions()
         }
         content(PaddingValues(0.dp))
     }

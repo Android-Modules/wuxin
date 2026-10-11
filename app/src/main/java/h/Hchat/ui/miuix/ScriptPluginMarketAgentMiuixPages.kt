@@ -189,47 +189,6 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
-@Composable
-private fun ScriptPluginMiuixPage(
-    context: Context,
-    provider: FeatureSettingsProvider,
-    onBack: () -> Unit,
-    onOpenMarket: () -> Unit = {},
-    onOpenAgent: () -> Unit = {},
-    onOpenManager: () -> Unit = {}
-) {
-    val listState = rememberLazyListState()
-    val scrollBehavior = MiuixScrollBehavior()
-
-    PageScaffold(
-        title = provider.title(),
-        largeTitle = provider.title(),
-        scrollBehavior = scrollBehavior,
-        bottomBar = {
-            BottomActionBar("返回", onBack)
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
-            state = listState,
-            contentPadding = PaddingValues(
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 84.dp
-            )
-        ) {
-            item { SmallTitle(text = "脚本插件") }
-            item {
-                ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
-                    context,
-                    {},
-                    onOpenMarket,
-                    onOpenAgent,
-                    onOpenManager
-                )
-            }
-        }
-    }
-}
 
 private object PluginMarketUi {
 
