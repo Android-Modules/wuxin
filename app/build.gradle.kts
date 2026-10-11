@@ -181,6 +181,9 @@ android {
         // 默认 locale values/ 仅有少量 key，完整字符串位于 values-zh-rCN；
         // androidResources.localeFilters=zh 打包时只保留中文资源，ExtraTranslation 属误报。
         disable += "ExtraTranslation"
+        // 迁移 Hchat 脚本子系统后源码体量很大（含单文件数万行），release lintVital 分析会 GC OOM，
+        // 这里跳过 release 构建的 lint（不影响编译与打包）。
+        checkReleaseBuilds = false
     }
 }
 
