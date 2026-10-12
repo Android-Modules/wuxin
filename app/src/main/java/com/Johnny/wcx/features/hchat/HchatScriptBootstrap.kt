@@ -87,6 +87,7 @@ object HchatScriptBootstrap {
             status = "DexKitBridge 已创建"
 
             val dexFinder = DexFinder(dexKitBridge, hostClassLoader, hostContext)
+            dexFinderRef = dexFinder
             val dexBridgeHolder = DexBridgeHolder(
                 dexKitBridge,
                 dexFinder,
