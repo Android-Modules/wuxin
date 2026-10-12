@@ -1041,7 +1041,7 @@ fun ScriptPluginManagerPage(
         onBack = onBack,
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+            modifier = Modifier.fillMaxSize(),
             state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding() + 8.dp,
@@ -3519,16 +3519,8 @@ fun ScriptPluginMarketPage(
             )
         }
     ) { padding ->
-        PullToRefresh(
-            isRefreshing = loading,
-            onRefresh = { if (!loading) refreshVersion++ },
-            modifier = Modifier.fillMaxSize(),
-            topAppBarScrollBehavior = scrollBehavior,
-            refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新", "刷新完成"),
-            contentPadding = PaddingValues(0.dp)
-        ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+            modifier = Modifier.fillMaxSize(),
             state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding() + 8.dp,
@@ -3616,7 +3608,7 @@ fun ScriptPluginMarketPage(
                 }
             }
         }
-        }
+        
     }
 
     selectedPlugin?.let { summary ->
