@@ -207,7 +207,7 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
         .getOrDefault("读取失败")
 
     // —— 环境 ——
-    val wechatVersion = runCatching { WeChatApis.version()?.displayVersion() }
+    val wechatVersion = runCatching { WeChatApis.version()?.current()?.displayVersion() }
         .getOrNull()?.takeIf { it.isNotBlank() } ?: "未知"
     rows += "微信版本" to wechatVersion
     rows += "宿主进程" to runCatching { TargetProcesses.currentName }.getOrDefault("未知")
@@ -218,7 +218,7 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
     // —— 存储与服务器 ——
     rows += "脚本目录" to runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
         .getOrDefault("未知")
-    rows += "日志目录" to runCatching { (KnownPaths.moduleData / "logs").absolutePath }
+    rows += "日志目录" to runCatching { KnownPaths.moduleData.resolve("logs").toString() }
         .getOrDefault("未知")
     rows += "市场服务器" to runCatching { PluginMarketSettings.serviceUrl(context) }
         .getOrDefault("未知")
