@@ -216,6 +216,30 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
     }.getOrDefault("未知")
     rows += "数据库取库自检" to runCatching { dbApi?.diagnose() ?: "无（数据库 API 未解析）" }
         .getOrDefault("未知")
+
+    // —— 各插件最近一次加载失败原因（读插件目录 log.txt 尾部）——
+    val pluginLoadErrors = runCatching {
+        plugins.mapNotNull { plugin ->
+            val message = runCatching {
+                val logFile = java.io.File(plugin.dir, "log.txt")
+                if (!logFile.isFile) {
+                    null
+                } else {
+                    val lines = logFile.readLines().takeLast(80)
+                    val index = lines.indexOfLast { it.contains("ERROR") }
+                    if (index < 0) {
+                        null
+                    } else {
+                        val head = lines[index].substringAfter("ERROR", lines[index]).trim()
+                        val detail = lines.getOrNull(index + 1)?.trim().orEmpty()
+                        "$head $detail".trim()
+                    }
+                }
+            }.getOrNull()
+            message?.takeIf { it.isNotBlank() }?.let { "${plugin.displayName ?: plugin.id}: $it" }
+        }
+    }.getOrDefault(emptyList())
+    rows += "插件加载错误" to if (pluginLoadErrors.isEmpty()) "无" else pluginLoadErrors.joinToString(" ｜ ")
     rows += "DexKit 解析" to runCatching { HchatScriptBootstrap.dexParseInfo() }.getOrDefault("未知")
     rows += "脚本 Hook 注册数" to runCatching { "${HookRegistry.get().size()} 个" }
         .getOrDefault("读取失败")
