@@ -2811,7 +2811,11 @@ internal fun PageScaffold(
                 }
                 topBarActions()
             }
-            content(PaddingValues(0.dp))
+            // 内容区用 weight(1f) 固定为「剩余高度」，保证内部 LazyColumn 拿到有界约束，
+            // 否则可能被按无界高度测量（滚动区间为 0，列表滑不动）。
+            Box(modifier = Modifier.weight(1f)) {
+                content(PaddingValues(0.dp))
+            }
         }
         if (bottomBar != null) {
             Box(
