@@ -141,6 +141,9 @@ import top.yukonga.miuix.kmp.menu.WindowDropdownMenu
 import java.time.ZoneId
 import java.time.ZoneOffset
 import android.provider.OpenableColumns
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.sizeIn
 
 
 private const val PRESS_RELEASE_DELAY_MS = 110L
