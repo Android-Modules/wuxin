@@ -19,6 +19,7 @@ import h.Hchat.dexkit.DexBridgeHolder
 import h.Hchat.dexkit.DexFinder
 import h.Hchat.hooks.api.core.WeChatApis
 import com.Johnny.wcx.utils.WeLogger
+import com.Johnny.wcx.utils.reflection.ClassLoaders
 import h.Hchat.hooks.api.runtime.WeChatVersionApi
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.items.protobuf.ProtobufPacketRuntime
@@ -1651,9 +1652,15 @@ object ScriptPluginRuntime {
     }
 
     private fun currentBridge(context: Context): ScriptPluginBridge {
+        // WCX 设置页运行在微信进程内：context.applicationContext 是微信的 Application，
+        // 它的类加载器看不到模块类（h.Hchat.* / com.Johnny.wcx.*），会让 BeanShell 解析脚本、
+        // 注入 API 前置代码时找不到类，导致所有插件加载失败并被自动关闭。
+        // 这里显式使用模块类加载器（其父链已挂 HybridClassLoader，同时可见宿主类），
+        // 与 WCX 自带脚本引擎（JavaEngine / JvmEvalEngine）保持一致。
+        val moduleClassLoader = ClassLoaders.MODULE
         return bridge ?: ScriptPluginBridge(
             context.applicationContext ?: context,
-            context.classLoader,
+            moduleClassLoader,
             scriptDir(context)
         ).also { bridge = it }
     }

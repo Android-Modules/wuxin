@@ -774,10 +774,14 @@ fun ScriptPluginSettingsContent(
                                 Handler(Looper.getMainLooper()).post {
                                     if (result.isFailure) {
                                         pluginEnabledStates = oldMap
+                                        val reason = result.exceptionOrNull()
+                                            ?.let { "${it.javaClass.simpleName}: ${it.message.orEmpty()}" }
+                                            .orEmpty()
+                                            .take(200)
                                         Toast.makeText(
                                             context,
-                                            "加载[${plugin.displayName ?: "未知"}]失败，已自动关闭",
-                                            Toast.LENGTH_SHORT
+                                            "加载[${plugin.displayName ?: "未知"}]失败: $reason",
+                                            Toast.LENGTH_LONG
                                         ).show()
                                     }
                                 }
