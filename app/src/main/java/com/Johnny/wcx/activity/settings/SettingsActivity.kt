@@ -179,6 +179,9 @@ private sealed interface SettingsNavTarget {
     data class Category(val name: String) : SettingsNavTarget
     data object License : SettingsNavTarget
     data object Acknowledgements : SettingsNavTarget
+    data object ScriptMarket : SettingsNavTarget
+    data object ScriptManager : SettingsNavTarget
+    data object ScriptDiagnostics : SettingsNavTarget
 }
 
 @Composable
@@ -191,6 +194,9 @@ private fun SettingsRoot(onFinish: () -> Unit) {
                 onOpenCategory = { push(SettingsNavTarget.Category(it)) },
                 onOpenLicense = { push(SettingsNavTarget.License) },
                 onOpenAcknowledgements = { push(SettingsNavTarget.Acknowledgements) },
+                onOpenScriptMarket = { push(SettingsNavTarget.ScriptMarket) },
+                onOpenScriptManager = { push(SettingsNavTarget.ScriptManager) },
+                onOpenScriptDiagnostics = { push(SettingsNavTarget.ScriptDiagnostics) },
             )
 
             is SettingsNavTarget.Category -> CategoryDetailScreen(
@@ -205,6 +211,12 @@ private fun SettingsRoot(onFinish: () -> Unit) {
             SettingsNavTarget.Acknowledgements -> AcknowledgementsScreen(
                 onBack = pop,
             )
+
+            SettingsNavTarget.ScriptMarket -> ScriptMarketScreen(onBack = pop)
+
+            SettingsNavTarget.ScriptManager -> ScriptManagerScreen(onBack = pop)
+
+            SettingsNavTarget.ScriptDiagnostics -> ScriptDiagnosticsScreen(onBack = pop)
         }
     }
 }
@@ -214,6 +226,9 @@ private fun MainPagerScreen(
     onOpenCategory: (String) -> Unit,
     onOpenLicense: () -> Unit,
     onOpenAcknowledgements: () -> Unit,
+    onOpenScriptMarket: () -> Unit,
+    onOpenScriptManager: () -> Unit,
+    onOpenScriptDiagnostics: () -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { 5 })
     val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
@@ -239,7 +254,11 @@ private fun MainPagerScreen(
                 when (page) {
                     0 -> HomePager(onOpenFeatures = { scope.launch { pagerState.animateScrollToPage(1) } })
                     1 -> FeaturesPager(onOpenCategory = onOpenCategory)
-                    2 -> ScriptsPager()
+                    2 -> ScriptsPager(
+                        onOpenMarket = onOpenScriptMarket,
+                        onOpenManager = onOpenScriptManager,
+                        onOpenDiagnostics = onOpenScriptDiagnostics,
+                    )
                     3 -> LogsPager()
                     else -> SettingsPager(onOpenLicense = onOpenLicense, onOpenAcknowledgements = onOpenAcknowledgements)
                 }

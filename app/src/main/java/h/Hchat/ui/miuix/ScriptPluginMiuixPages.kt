@@ -621,7 +621,8 @@ fun ScriptPluginSettingsContent(
     context: Context,
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit,
     onOpenMarket: () -> Unit,
-    onOpenManager: () -> Unit
+    onOpenManager: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val sp = remember { HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME) }
@@ -658,36 +659,15 @@ fun ScriptPluginSettingsContent(
     }
 
     Column {
-        // 脚本运行时依赖微信公共 API（数据库/账号），未就绪时把根因直接显示出来，便于定位。
+        // 脚本功能诊断入口：脚本开关开不起来/脚本不工作时，从这里直接看状态与原因。
         val apiReady = runCatching { WeChatApis.database() }.getOrNull() != null
-        if (!apiReady) {
-            SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
-                Text(
-                    text = "脚本运行时未就绪",
-                    color = Color(0xFFD93025),
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-                Text(
-                    text = "引导：" + HchatScriptBootstrap.status,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                )
-                Text(
-                    text = "原因：" + runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }
-                        .getOrElse { it.message ?: "未知" }.orEmpty().ifBlank { "已就绪" },
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-                Text(
-                    text = "请把这几行截图反馈，即可定位 DexKit/版本适配问题。",
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                )
-            }
+        val readinessDetail = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }
+            .getOrNull().orEmpty()
+        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+            ActionRow(
+                "脚本功能诊断",
+                if (apiReady) "运行时正常，可查看状态与日志" else "未就绪：${readinessDetail.ifBlank { "微信 API 未解析" }}",
+            ) { onOpenDiagnostics() }
         }
         SettingsCard {
             PathSwitchRow(
@@ -2811,7 +2791,11 @@ internal fun PageScaffold(
                 }
                 topBarActions()
             }
-            content(PaddingValues(0.dp))
+            // 内容区用 weight(1f) 固定为「剩余高度」，保证内部 LazyColumn 拿到有界约束，
+            // 否则可能被按无界高度测量（滚动区间为 0，列表滑不动）。
+            Box(modifier = Modifier.weight(1f)) {
+                content(PaddingValues(0.dp))
+            }
         }
         if (bottomBar != null) {
             Box(
@@ -5217,12 +5201,14 @@ fun ScriptPluginMiuixTabContent(
     onOpenManager: () -> Unit = {},
     onOpenMarket: () -> Unit = {},
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
         context = context,
         onOpenReadme = onOpenReadme,
         onOpenMarket = onOpenMarket,
         onOpenManager = onOpenManager,
+        onOpenDiagnostics = onOpenDiagnostics,
     )
 }
 
