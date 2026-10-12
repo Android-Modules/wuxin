@@ -582,33 +582,65 @@ public final class WeChatDatabaseApi {
         return null;
     }
 
+    /** 搜索上限，避免对象图异常庞大时长时间遍历。 */
+    private static final int WRAPPER_SEARCH_LIMIT = 200_000;
+
     private Object findDbWrapper(Object storage) {
         if (storage == null || dexFinder.sqliteDbWrapperClass == null) return null;
+        Class<?> target = dexFinder.sqliteDbWrapperClass;
         Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         ArrayDeque<Object> queue = new ArrayDeque<>();
         queue.add(storage);
+        int scanned = 0;
         while (!queue.isEmpty()) {
             Object current = queue.removeFirst();
             if (current == null || visited.contains(current)) continue;
             visited.add(current);
+            scanned++;
+            if (scanned > WRAPPER_SEARCH_LIMIT) break;
 
-            if (dexFinder.sqliteDbWrapperClass.isInstance(current)) {
+            if (target.isInstance(current)) {
+                log("数据库 wrapper 命中: " + current.getClass().getName() + "（扫描 " + scanned + " 个对象）");
                 return current;
             }
 
             Method method = findQueryMethod(current.getClass());
             if (method != null) {
+                log("数据库 wrapper 按查询方法命中: " + current.getClass().getName() + "（扫描 " + scanned + " 个对象）");
                 return current;
             }
 
             enqueueNestedObjects(current, queue, visited);
         }
+        // 定位失败时输出足够信息以便定位（所在 storage 类型、目标类、扫描规模）。
+        log("未找到 SqliteDB wrapper：storage=" + storage.getClass().getName()
+                + " target=" + target.getName() + "，已扫描 " + scanned + " 个对象");
         return null;
     }
 
     private void enqueueNestedObjects(Object source,
                                       ArrayDeque<Object> queue,
                                       Set<Object> visited) {
+        // Map / 集合 / 数组：部分微信版本会把数据库/storage 对象缓存于其中，必须展开。
+        try {
+            if (source instanceof Map) {
+                for (Object value : ((Map<?, ?>) source).values()) {
+                    if (value != null && !visited.contains(value)) queue.addLast(value);
+                }
+            } else if (source instanceof Iterable) {
+                for (Object value : (Iterable<?>) source) {
+                    if (value != null && !visited.contains(value)) queue.addLast(value);
+                }
+            } else if (source.getClass().isArray()) {
+                int length = java.lang.reflect.Array.getLength(source);
+                for (int i = 0; i < length; i++) {
+                    Object value = java.lang.reflect.Array.get(source, i);
+                    if (value != null && !visited.contains(value)) queue.addLast(value);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
         Class<?> cur = source.getClass();
         while (cur != null && cur != Object.class) {
             for (Field field : KavaReflector.declaredFields(cur)) {
