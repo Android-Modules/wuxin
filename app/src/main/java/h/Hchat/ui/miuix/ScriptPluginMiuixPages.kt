@@ -678,7 +678,7 @@ fun ScriptPluginSettingsContent(
                 if (apiReady) "运行时正常，可查看状态与日志" else "未就绪：${readinessDetail.ifBlank { "微信 API 未解析" }}",
             ) { onOpenDiagnostics() }
         }
-        SettingsCard {
+        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
             PathSwitchRow(
                 globalEnabled,
                 "插件总开关",
@@ -1479,7 +1479,16 @@ private fun ScriptPluginManagerRow(
                 translationY = visualDragY
                 shadowElevation = if (dragging) with(density) { 7.dp.toPx() } else 0f
                 shape = RoundedCornerShape(8.dp)
+                clip = true
             }
+            // 拖动中的行必须有不透明底色：否则它会透出下层行的文字，看起来像重影。
+            .then(
+                if (dragging) {
+                    Modifier.background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(8.dp))
+                } else {
+                    Modifier
+                }
+            )
             .fillMaxWidth()
             .onSizeChanged { itemHeightPx = it.height.toFloat() }
             .clickable { onSelectedChange(!selected) }
