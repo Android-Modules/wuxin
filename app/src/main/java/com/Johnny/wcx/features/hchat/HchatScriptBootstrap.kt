@@ -44,6 +44,11 @@ object HchatScriptBootstrap {
     @Volatile
     private var installed = false
 
+    /** 最近一次安装链路状态；供脚本首页诊断展示（用户截图即可反映根因）。 */
+    @Volatile
+    var status: String = "未执行"
+        private set
+
     /** 持有 DexKitBridge 强引用，避免被回收；该实例独立于 WCX 的懒加载/idle 机制，长期存活供脚本运行时使用。 */
     @Volatile
     private var dexKitBridgeRef: DexKitBridge? = null
@@ -52,6 +57,7 @@ object HchatScriptBootstrap {
     fun install() {
         if (installed) return
         installed = true
+        status = "开始安装"
 
         runCatching {
             val hostContext = HostInfo.application
@@ -60,6 +66,7 @@ object HchatScriptBootstrap {
 
             val dexKitBridge = DexKitBridge.create(HostInfo.appInfo.sourceDir)
             dexKitBridgeRef = dexKitBridge
+            status = "DexKitBridge 已创建"
 
             val dexFinder = DexFinder(dexKitBridge, hostClassLoader, hostContext)
             val dexBridgeHolder = DexBridgeHolder(
@@ -87,10 +94,20 @@ object HchatScriptBootstrap {
             // 与 Hchat 的 FeatureManager.installAll 保持一致：先 onInit（注册设置 provider 等），再 install。
             runCatching {
                 WechatApiFeature().also { it.onInit(context) }.install(context)
-            }.onFailure { WeLogger.e(TAG, "WechatApiFeature 安装失败", it) }
+            }.onSuccess {
+                status = "WechatApiFeature 安装成功"
+            }.onFailure {
+                status = "WechatApiFeature 安装失败：" + (it.message ?: it.javaClass.simpleName)
+                WeLogger.e(TAG, "WechatApiFeature 安装失败", it)
+            }
             runCatching {
                 ScriptPluginFeature().also { it.onInit(context) }.install(context)
-            }.onFailure { WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it) }
+            }.onSuccess {
+                status += " / ScriptPluginFeature 安装成功"
+            }.onFailure {
+                status += " / ScriptPluginFeature 安装失败：" + (it.message ?: it.javaClass.simpleName)
+                WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it)
+            }
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
             // （resolveAll + 数据库 API 解析），数据库才会就绪。无论前面是否局部失败都要执行。
@@ -117,6 +134,7 @@ object HchatScriptBootstrap {
                 }
             }, "WCX-Script-SelfCheck").apply { isDaemon = true }.start()
         }.onFailure {
+            status = "引导异常：" + (it.message ?: it.javaClass.simpleName)
             WeLogger.e(TAG, "Hchat 脚本子系统安装失败", it)
         }
     }
