@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.ui.miuix.ScriptPluginManagerTabPage
-import h.Hchat.ui.miuix.ScriptPluginMarketTabPage
+import h.Hchat.ui.miuix.PluginMarketUi
 import h.Hchat.ui.miuix.ScriptPluginMiuixTabContent
 import h.Hchat.ui.miuix.ScriptPluginReadmeTabDialog
 
@@ -23,6 +23,7 @@ import h.Hchat.ui.miuix.ScriptPluginReadmeTabDialog
  * 「脚本」独立页 —— WCX 专属脚本插件中心：
  * 插件总开关 / 插件列表（启用开关 + 操作菜单）/ 本地插件管理页 / 在线插件市场 / README 弹窗。
  * 数据与逻辑走已内置的脚本子系统（ScriptPluginRuntime / ScriptPluginManager / PluginMarketRepository）。
+ * 在线插件页为 Hchat 原版 UI 整段移植（PluginMarketUi.ScriptPluginMarketPage）。
  */
 @Composable
 fun ScriptsPager() {
@@ -32,7 +33,7 @@ fun ScriptsPager() {
     var readmePlugin by remember { mutableStateOf<ScriptPluginRuntime.ScriptPlugin?>(null) }
 
     when {
-        showMarket -> ScriptPluginMarketTabPage(context = context, onBack = { showMarket = false })
+        showMarket -> PluginMarketUi.ScriptPluginMarketPage(context = context, onBack = { showMarket = false })
         showManager -> ScriptPluginManagerTabPage(context = context, onBack = { showManager = false })
         else -> MiuixListScaffold(title = "脚本", blurTopBar = false) {
             item {

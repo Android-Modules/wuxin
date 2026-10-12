@@ -116,6 +116,35 @@ import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.window.Dialog
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import java.time.format.DateTimeFormatter
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
+import androidx.compose.ui.focus.FocusRequester
+import java.time.Instant
+import androidx.compose.ui.platform.LocalContext
+import java.time.LocalDateTime
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import java.time.OffsetDateTime
+import h.Hchat.hooks.items.script.market.PluginMarketComment
+import h.Hchat.hooks.items.script.market.PluginMarketException
+import h.Hchat.hooks.items.script.market.PluginMarketFile
+import h.Hchat.hooks.items.script.market.PluginMarketHistoryVersion
+import h.Hchat.hooks.items.script.market.PluginMarketInstaller
+import h.Hchat.hooks.items.script.market.PluginMarketNotification
+import h.Hchat.hooks.items.script.market.PluginMarketReviewStatus
+import h.Hchat.hooks.items.script.market.PluginMarketUserIdentity
+import top.yukonga.miuix.kmp.basic.PullToRefresh
+import androidx.compose.ui.text.style.TextAlign
+import h.Hchat.hooks.api.core.WeChatApis
+import top.yukonga.miuix.kmp.menu.WindowDropdownMenu
+import java.time.ZoneId
+import java.time.ZoneOffset
+import android.provider.OpenableColumns
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.RowScope
 
 
 private const val PRESS_RELEASE_DELAY_MS = 110L
@@ -2606,6 +2635,80 @@ internal fun BottomActionBar(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 底部双按钮操作栏（移植自 Hchat）。
+ * 与上面的单按钮版本并存：两者参数名不同，重载可区分。
+ */
+@Composable
+internal fun BottomActionBar(
+    primaryText: String,
+    onPrimaryClick: () -> Unit,
+    secondaryText: String? = null,
+    onSecondaryClick: (() -> Unit)? = null,
+    middleText: String? = null,
+    onMiddleClick: (() -> Unit)? = null
+) {
+    val backAction = when {
+        secondaryText == "取消" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "取消" && onMiddleClick != null -> onMiddleClick
+        primaryText == "取消" -> onPrimaryClick
+        secondaryText == "返回" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "返回" && onMiddleClick != null -> onMiddleClick
+        primaryText == "返回" -> onPrimaryClick
+        secondaryText == "关闭" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "关闭" && onMiddleClick != null -> onMiddleClick
+        primaryText == "关闭" -> onPrimaryClick
+        else -> null
+    }
+    RegisterSettingsBackHandler(backAction)
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(MiuixTheme.colorScheme.background.copy(alpha = 0.92f))
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (secondaryText != null && onSecondaryClick != null) {
+            BottomBarButton(
+                text = secondaryText,
+                modifier = Modifier.weight(1f),
+                filled = false,
+                onClick = onSecondaryClick
+            )
+        }
+        if (middleText != null && onMiddleClick != null) {
+            BottomBarButton(
+                text = middleText,
+                modifier = Modifier.weight(1f),
+                filled = false,
+                onClick = onMiddleClick
+            )
+        }
+        BottomBarButton(
+            text = primaryText,
+            modifier = Modifier.weight(1f),
+            filled = true,
+            onClick = onPrimaryClick
+        )
+    }
+}
+
+/** 底部操作栏按钮（移植自 Hchat）。 */
+@Composable
+private fun BottomBarButton(text: String, modifier: Modifier, filled: Boolean, onClick: () -> Unit) {
+    val bg = if (filled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.secondaryVariant
+    val fg = if (filled) Color.White else MiuixTheme.colorScheme.onSecondaryVariant
+    Text(
+        modifier = modifier.clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+        text = text,
+        color = fg,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center
+    )
+}
+
 /** 搜索框。 */
 @Composable
 internal fun SearchBarSurface(
@@ -2623,88 +2726,747 @@ internal fun SearchBarSurface(
     )
 }
 
-/** 页面脚手架（顶栏 + 内容；不依赖 miuix 高级 API，避免版本差异）。 */
+/** 页面脚手架（顶栏 + 可选右上操作 + 可选底部操作栏 + 内容；不依赖 miuix 高级 API，避免版本差异）。 */
 @Composable
 internal fun PageScaffold(
     title: String,
     largeTitle: String,
     scrollBehavior: Any? = null,
     onBack: (() -> Unit)? = null,
-    @Suppress("UNUSED_PARAMETER") bottomBar: (@Composable () -> Unit)? = null,
+    topBarActions: @Composable RowScope.() -> Unit = {},
+    bottomBar: (@Composable () -> Unit)? = null,
     @Suppress("UNUSED_PARAMETER") largeTitleUnused: String = largeTitle,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    // 脚本管理/导入页是全屏 PageScaffold，顶栏需避开状态栏，否则「返回」会贴到状态栏。
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        BasicComponent(onClick = onBack) {
-            Text(
-                text = if (onBack != null) "← $title" else title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = if (onBack != null) MiuixTheme.colorScheme.primary
-                else BasicComponentDefaults.titleColor().color,
-            )
+    // 脚本管理/导入/在线插件页均为全屏 PageScaffold，顶栏需避开状态栏，否则「返回」会贴到状态栏。
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    BasicComponent(onClick = onBack) {
+                        Text(
+                            text = if (onBack != null) "← $title" else title,
+                            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                            fontWeight = FontWeight.Medium,
+                            color = if (onBack != null) MiuixTheme.colorScheme.primary
+                            else BasicComponentDefaults.titleColor().color,
+                        )
+                    }
+                }
+                topBarActions()
+            }
+            content(PaddingValues(0.dp))
         }
-        content(PaddingValues(0.dp))
+        if (bottomBar != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+            ) {
+                bottomBar()
+            }
+        }
     }
 }
 
+/** 读取文件选择器返回 Uri 的显示名（移植自 Hchat MiuixSettingsPage）。 */
+private fun queryDisplayName(context: Context, uri: Uri?): String? {
+    if (uri == null) return null
+    if ("content".equals(uri.scheme, ignoreCase = true)) {
+        try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0) {
+                            return cursor.getString(index)?.takeIf { it.isNotBlank() }
+                        }
+                    }
+                }
+        } catch (_: Throwable) {
+        }
+    }
+    return uri.lastPathSegment
+        ?.let { Uri.decode(it) }
+        ?.substringAfterLast('/')
+        ?.substringAfterLast(':')
+        ?.takeIf { it.isNotBlank() }
+}
 
-/**
- * WCX 入口：在线插件市场页。
- *
- * 说明：UI 为 WCX 自写，底层直接调用仓内已内置的市场客户端
- * （[PluginMarketRepository]），服务端地址沿用 Hchat 的
- * `https://hchat.103.97.179.142.sslip.io`（见 PluginMarketSettings.DEFAULT_SERVICE_URL）。
- */
+// ---------------------------------------------------------------------------
+// 以下为【在线插件市场】UI，按 Hchat 原版整段移植（列表页 + 插件详情页 + 历史版本），
+// 仅把「取宿主 Activity」从 Agent 工具改为本文件内已有的 findActivity()。
+// ---------------------------------------------------------------------------
+
+private object PluginMarketExtraFilePickerBridge {
+    private val hookedClasses = HashSet<Class<*>>()
+    private var pending: PendingResult? = null
+
+    @Synchronized
+    fun launch(activity: Activity, onResult: (List<PluginMarketFile>) -> Unit) {
+        pending = PendingResult(activity, onResult)
+        hookActivityResult(activity.javaClass)
+        hookActivityResult(Activity::class.java)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }.preferSystemDocumentsUi(activity)
+        try {
+            activity.startActivityForResult(intent, PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE)
+        } catch (_: Throwable) {
+            val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivityForResult(
+                Intent.createChooser(fallback, "选择插件附加文件"),
+                PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE
+            )
+        }
+    }
+
+    @Synchronized
+    private fun hookActivityResult(clazz: Class<*>) {
+        if (!hookedClasses.add(clazz)) return
+        runCatching {
+            XposedBridge.hookAllMethods(clazz, "onActivityResult", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val requestCode = param.args.getOrNull(0) as? Int ?: return
+                    if (requestCode != PLUGIN_MARKET_EXTRA_FILE_REQUEST_CODE) return
+                    val result = takePending() ?: return
+                    val resultCode = param.args.getOrNull(1) as? Int ?: return
+                    if (resultCode != Activity.RESULT_OK) return
+                    val data = param.args.getOrNull(2) as? Intent ?: return
+                    val uris = pickedUris(data)
+                    if (uris.isEmpty()) return
+                    Thread({
+                        val files = uris.mapNotNull { uri -> readFile(result.activity, uri) }
+                            .distinctBy { it.name.lowercase(Locale.ROOT) }
+                        if (files.isNotEmpty()) {
+                            Handler(Looper.getMainLooper()).post { result.callback(files) }
+                        }
+                    }, "Hchat-Plugin-Market-Files").start()
+                }
+            })
+        }.onFailure {
+            hookedClasses.remove(clazz)
+        }
+    }
+
+    private fun pickedUris(data: Intent): List<Uri> {
+        val result = ArrayList<Uri>()
+        data.data?.let(result::add)
+        data.clipData?.let { clip ->
+            for (index in 0 until clip.itemCount) {
+                runCatching { clip.getItemAt(index)?.uri }.getOrNull()?.let(result::add)
+            }
+        }
+        return result.distinct()
+    }
+
+    private fun readFile(activity: Activity, uri: Uri): PluginMarketFile? {
+        return runCatching {
+            val displayName = queryDisplayName(activity, uri)
+                ?.substringAfterLast('/')
+                ?.substringAfterLast('\\')
+                ?.ifBlank { null }
+                ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+            require(displayName.isNotBlank()) { "无法读取所选文件名" }
+            val bytes = java.io.ByteArrayOutputStream().use { output ->
+                activity.contentResolver.openInputStream(uri)?.use { input ->
+                    val buffer = ByteArray(32 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= PluginMarketInstaller.MAX_EXTRA_FILE_BYTES) {
+                            "$displayName 超过 ${PluginMarketInstaller.MAX_EXTRA_FILE_BYTES / 1024} KiB"
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                } ?: error("无法打开所选文件")
+                output.toByteArray()
+            }
+            PluginMarketInstaller.createExternalFile(displayName, bytes)
+        }.getOrElse {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(activity, it.message ?: "读取附加文件失败", Toast.LENGTH_SHORT).show()
+            }
+            null
+        }
+    }
+
+    @Synchronized
+    private fun takePending(): PendingResult? {
+        val result = pending
+        pending = null
+        return result
+    }
+
+    private data class PendingResult(
+        val activity: Activity,
+        val callback: (List<PluginMarketFile>) -> Unit
+    )
+}
+
+internal data class PopupChoice<T>(
+    val label: String,
+    val value: T
+)
+
 @Composable
-fun ScriptPluginMarketTabPage(
+internal fun PopupChoiceRow(
+    title: String,
+    summary: String,
+    options: List<PopupChoice<String>>,
+    currentValue: String,
+    onValueChanged: (String) -> Unit,
+    enabled: Boolean = true
+) {
+    val selectedIndex = options.indexOfFirst { it.value == currentValue }.takeIf { it >= 0 } ?: 0
+    WindowDropdownMenu(
+        entry = DropdownEntry(
+            items = options.mapIndexed { index, option ->
+                DropdownItem(
+                    text = option.label,
+                    selected = index == selectedIndex,
+                    onClick = { onValueChanged(option.value) }
+                )
+            }
+        ),
+        title = title,
+        summary = summary,
+        enabled = enabled,
+        collapseOnSelection = true
+    )
+}
+
+internal object PluginMarketUi {
+
+private enum class PluginMarketUploadPhase {
+    QUEUED,
+    UPLOADING,
+    SUCCESS,
+    PENDING_REVIEW,
+    FAILED
+}
+
+private data class PluginMarketUploadStatus(
+    val phase: PluginMarketUploadPhase,
+    val message: String
+)
+
+@Composable
+fun ScriptPluginMarketPage(
     context: Context,
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
-    var loading by remember { mutableStateOf(true) }
-    var errorText by remember { mutableStateOf("") }
-    var plugins by remember { mutableStateOf<List<PluginMarketPlugin>>(emptyList()) }
-    var installingId by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf("latest") }
     var refreshVersion by remember { mutableStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf("") }
+    var plugins by remember { mutableStateOf<List<PluginMarketPlugin>>(emptyList()) }
+    var pluginCount by remember { mutableStateOf(0) }
+    var selectedPlugin by remember { mutableStateOf<PluginMarketPlugin?>(null) }
+    var detailPlugin by remember { mutableStateOf<PluginMarketPlugin?>(null) }
+    var detailLoading by remember { mutableStateOf(false) }
+    var detailError by remember { mutableStateOf("") }
+    var detailRetryVersion by remember { mutableStateOf(0) }
+    var historyVersions by remember { mutableStateOf<List<PluginMarketHistoryVersion>>(emptyList()) }
+    var historyLoading by remember { mutableStateOf(false) }
+    var historyError by remember { mutableStateOf("") }
+    var historyInstallVersionId by remember { mutableStateOf<String?>(null) }
+    var comments by remember { mutableStateOf<List<PluginMarketComment>>(emptyList()) }
+    var commentsLoading by remember { mutableStateOf(false) }
+    var commentsError by remember { mutableStateOf("") }
+    var commentsRetryVersion by remember { mutableStateOf(0) }
+    var currentUserIdentity by remember { mutableStateOf<PluginMarketUserIdentity?>(null) }
+    var interactionError by remember { mutableStateOf("") }
+    var likedByCurrentUser by remember { mutableStateOf(false) }
+    var followingByCurrentUser by remember { mutableStateOf(false) }
+    var likeCountLoaded by remember { mutableStateOf(false) }
+    var commentCountLoaded by remember { mutableStateOf(false) }
+    var updatingLike by remember { mutableStateOf(false) }
+    var updatingFollow by remember { mutableStateOf(false) }
+    var commentDraft by remember { mutableStateOf("") }
+    var submittingComment by remember { mutableStateOf(false) }
+    var deletingCommentId by remember { mutableStateOf<String?>(null) }
+    var detailTargetExists by remember { mutableStateOf(false) }
+    var installingRemoteId by remember { mutableStateOf<String?>(null) }
+    var deletingRemoteId by remember { mutableStateOf<String?>(null) }
+    var installMessage by remember { mutableStateOf("") }
+    var pendingOverwrite by remember { mutableStateOf<PluginMarketPlugin?>(null) }
+    var showUploadDialog by remember { mutableStateOf(false) }
+    var notifications by remember { mutableStateOf<List<PluginMarketNotification>>(emptyList()) }
+    var notificationUnreadCount by remember { mutableStateOf(0L) }
+    var notificationsLoading by remember { mutableStateOf(true) }
+    var notificationsError by remember { mutableStateOf("") }
+    var notificationRefreshVersion by remember { mutableStateOf(0) }
+    var showNotifications by remember { mutableStateOf(false) }
 
-    LaunchedEffect(refreshVersion) {
+    fun updateSocialCounts(
+        remotePluginId: String,
+        likeCount: Long? = null,
+        commentCount: Long? = null
+    ) {
+        fun updated(plugin: PluginMarketPlugin): PluginMarketPlugin = plugin.copy(
+            likeCount = likeCount ?: plugin.likeCount,
+            commentCount = commentCount ?: plugin.commentCount
+        )
+        detailPlugin = detailPlugin?.let { if (it.remotePluginId == remotePluginId) updated(it) else it }
+        selectedPlugin = selectedPlugin?.let { if (it.remotePluginId == remotePluginId) updated(it) else it }
+        plugins = plugins.map { if (it.remotePluginId == remotePluginId) updated(it) else it }
+    }
+
+    LaunchedEffect(query, sort, refreshVersion) {
+        delay(250L)
         loading = true
-        errorText = ""
+        loadError = ""
         val result = withContext(Dispatchers.IO) {
-            PluginMarketRepository.list(context, "", "latest")
+            PluginMarketRepository.list(
+                context = context,
+                query = query.trim(),
+                sort = sort,
+                limit = Int.MAX_VALUE
+            )
         }
         result.fold(
-            onSuccess = { page -> plugins = page.items },
-            onFailure = { errorText = it.message ?: "加载失败" }
+            onSuccess = { page ->
+                plugins = page.items
+                pluginCount = page.count
+            },
+            onFailure = { error ->
+                loadError = pluginMarketErrorMessage(error)
+                if (plugins.isEmpty()) pluginCount = 0
+            }
         )
         loading = false
     }
 
-    fun install(plugin: PluginMarketPlugin) {
-        if (installingId.isNotEmpty()) return
-        installingId = plugin.remotePluginId
+    LaunchedEffect(notificationRefreshVersion) {
+        notificationsLoading = true
+        notificationsError = ""
+        val result = withContext(Dispatchers.IO) {
+            PluginMarketRepository.notifications(context, limit = Int.MAX_VALUE)
+        }
+        result.fold(
+            onSuccess = { page ->
+                notifications = page.items
+                notificationUnreadCount = page.unreadCount
+            },
+            onFailure = { error ->
+                notificationsError = pluginMarketErrorMessage(error)
+                if (notifications.isEmpty()) notificationUnreadCount = 0L
+            }
+        )
+        notificationsLoading = false
+    }
+
+    LaunchedEffect(showNotifications, notificationsLoading) {
+        if (!showNotifications || notificationsLoading) return@LaunchedEffect
+        val unreadIds = notifications.filterNot { it.read }.map { it.notificationId }
+        if (unreadIds.isEmpty()) return@LaunchedEffect
+        val result = withContext(Dispatchers.IO) {
+            PluginMarketRepository.markNotificationsRead(context, unreadIds)
+        }
+        result.onSuccess { readResult ->
+            notificationUnreadCount = readResult.unreadCount
+            val markedIds = unreadIds.toHashSet()
+            notifications = notifications.map { item ->
+                if (item.notificationId in markedIds) item.copy(read = true) else item
+            }
+        }
+    }
+
+    LaunchedEffect(selectedPlugin?.remotePluginId, detailRetryVersion) {
+        val selected = selectedPlugin ?: return@LaunchedEffect
+        detailLoading = true
+        detailError = ""
+        detailPlugin = null
+        historyLoading = true
+        historyError = ""
+        historyVersions = emptyList()
+        detailTargetExists = false
+        installMessage = ""
+        val (detailResult, historyResult) = withContext(Dispatchers.IO) {
+            val loadedDetail = PluginMarketRepository.detail(context, selected.remotePluginId).map { detail ->
+                val exists = PluginMarketInstaller.existingLocalPluginId(context, detail) != null
+                detail to exists
+            }
+            loadedDetail to PluginMarketRepository.history(context, selected.remotePluginId)
+        }
+        detailResult.fold(
+            onSuccess = { (detail, exists) ->
+                val currentSummary = selectedPlugin?.takeIf {
+                    it.remotePluginId == selected.remotePluginId
+                }
+                detailPlugin = detail.copy(
+                    likeCount = if (likeCountLoaded) {
+                        currentSummary?.likeCount ?: detail.likeCount
+                    } else {
+                        detail.likeCount
+                    },
+                    commentCount = if (commentCountLoaded) {
+                        currentSummary?.commentCount ?: detail.commentCount
+                    } else {
+                        detail.commentCount
+                    }
+                )
+                detailTargetExists = exists
+            },
+            onFailure = { error ->
+                detailError = pluginMarketErrorMessage(error)
+                detailTargetExists = false
+            }
+        )
+        historyResult.fold(
+            onSuccess = { historyVersions = it },
+            onFailure = { historyError = pluginMarketErrorMessage(it) }
+        )
+        detailLoading = false
+        historyLoading = false
+    }
+
+    LaunchedEffect(selectedPlugin?.remotePluginId, commentsRetryVersion) {
+        val selected = selectedPlugin ?: return@LaunchedEffect
+        commentsLoading = true
+        commentsError = ""
+        interactionError = ""
+        comments = emptyList()
+        currentUserIdentity = null
+        likedByCurrentUser = false
+        likeCountLoaded = false
+        commentCountLoaded = false
+        val identityResult = withContext(Dispatchers.IO) { PluginMarketRepository.currentUserIdentity(context) }
+        val commentsResult = withContext(Dispatchers.IO) { PluginMarketRepository.comments(context, selected.remotePluginId) }
+        val likedResult = withContext(Dispatchers.IO) { PluginMarketRepository.likeStatus(context, selected.remotePluginId) }
+        val followedResult = withContext(Dispatchers.IO) { PluginMarketRepository.followStatus(context, selected.remotePluginId) }
+        identityResult.fold(
+            onSuccess = { currentUserIdentity = it },
+            onFailure = { interactionError = pluginMarketErrorMessage(it) }
+        )
+        commentsResult.fold(
+            onSuccess = { page ->
+                comments = page.items
+                commentCountLoaded = true
+                updateSocialCounts(selected.remotePluginId, commentCount = page.total)
+            },
+            onFailure = { commentsError = pluginMarketErrorMessage(it) }
+        )
+        likedResult.fold(
+            onSuccess = { likeResult ->
+                likedByCurrentUser = likeResult.liked
+                likeCountLoaded = true
+                updateSocialCounts(selected.remotePluginId, likeCount = likeResult.likeCount)
+            },
+            onFailure = {
+                if (interactionError.isBlank()) interactionError = pluginMarketErrorMessage(it)
+            }
+        )
+        followedResult.fold(
+            onSuccess = { followingByCurrentUser = it },
+            onFailure = { if (interactionError.isBlank()) interactionError = pluginMarketErrorMessage(it) }
+        )
+        commentsLoading = false
+    }
+
+    fun performInstall(plugin: PluginMarketPlugin, overwrite: Boolean) {
+        if (installingRemoteId != null) return
+        installingRemoteId = plugin.remotePluginId
+        installMessage = ""
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                PluginMarketRepository.downloadAndInstall(context, plugin.remotePluginId)
+                PluginMarketRepository.install(context, plugin, overwrite)
             }
             result.fold(
-                onSuccess = {
-                    Toast.makeText(context, "已安装：${plugin.name}", Toast.LENGTH_SHORT).show()
+                onSuccess = { installed ->
+                    detailTargetExists = true
+                    installed.downloadCount?.let { count ->
+                        detailPlugin = detailPlugin?.copy(downloadCount = count)
+                        selectedPlugin = selectedPlugin?.copy(downloadCount = count)
+                        plugins = plugins.map { item ->
+                            if (item.remotePluginId == plugin.remotePluginId) {
+                                item.copy(downloadCount = count)
+                            } else {
+                                item
+                            }
+                        }
+                    }
+                    installMessage = if (installed.replacedExisting) {
+                        "更新成功，插件已保持禁用"
+                    } else {
+                        "安装成功，插件默认禁用"
+                    }
+                    Toast.makeText(context, installMessage, Toast.LENGTH_SHORT).show()
                 },
-                onFailure = {
-                    Toast.makeText(context, "安装失败：${it.message}", Toast.LENGTH_LONG).show()
+                onFailure = { error ->
+                    installMessage = "安装失败: ${pluginMarketErrorMessage(error)}"
                 }
             )
-            installingId = ""
-            refreshVersion++
+            installingRemoteId = null
+        }
+    }
+
+    fun requestInstall(plugin: PluginMarketPlugin) {
+        if (installingRemoteId != null) return
+        installingRemoteId = plugin.remotePluginId
+        installMessage = ""
+        scope.launch {
+            val exists = withContext(Dispatchers.IO) {
+                PluginMarketInstaller.existingLocalPluginId(context, plugin) != null
+            }
+            installingRemoteId = null
+            if (exists) {
+                pendingOverwrite = plugin
+            } else {
+                performInstall(plugin, overwrite = false)
+            }
+        }
+    }
+
+    fun requestHistoryInstall(version: PluginMarketHistoryVersion) {
+        val selected = selectedPlugin ?: return
+        if (historyInstallVersionId != null || installingRemoteId != null) return
+        historyInstallVersionId = version.versionId
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.historyDetail(
+                    context,
+                    selected.remotePluginId,
+                    version.versionId
+                )
+            }
+            historyInstallVersionId = null
+            result.fold(
+                onSuccess = ::requestInstall,
+                onFailure = {
+                    Toast.makeText(
+                        context,
+                        "读取历史版本失败: ${pluginMarketErrorMessage(it)}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+    }
+
+    fun deleteOwnedPlugin(plugin: PluginMarketPlugin) {
+        if (deletingRemoteId != null || installingRemoteId != null) return
+        deletingRemoteId = plugin.remotePluginId
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.deleteOwnedRemote(context, plugin.remotePluginId)
+            }
+            deletingRemoteId = null
+            result.fold(
+                onSuccess = {
+                    selectedPlugin = null
+                    detailPlugin = null
+                    historyVersions = emptyList()
+                    plugins = plugins.filterNot { it.remotePluginId == plugin.remotePluginId }
+                    pluginCount = (pluginCount - 1).coerceAtLeast(0)
+                    refreshVersion++
+                    Toast.makeText(context, "线上插件已删除，本地插件不受影响", Toast.LENGTH_SHORT).show()
+                },
+                onFailure = { error ->
+                    Toast.makeText(
+                        context,
+                        "删除失败: ${pluginMarketErrorMessage(error)}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+    }
+
+    fun togglePluginLike(plugin: PluginMarketPlugin) {
+        if (updatingLike) return
+        if (currentUserIdentity == null) {
+            Toast.makeText(
+                context,
+                interactionError.ifBlank { "当前微信账号资料尚未就绪" },
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        val removeLike = likedByCurrentUser
+        updatingLike = true
+        interactionError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                if (removeLike) {
+                    PluginMarketRepository.unlike(context, plugin.remotePluginId)
+                } else {
+                    PluginMarketRepository.like(context, plugin.remotePluginId)
+                }
+            }
+            result.fold(
+                onSuccess = { likeResult ->
+                    likedByCurrentUser = likeResult.liked
+                    likeCountLoaded = true
+                    updateSocialCounts(plugin.remotePluginId, likeCount = likeResult.likeCount)
+                },
+                onFailure = { error ->
+                    interactionError = pluginMarketErrorMessage(error)
+                    Toast.makeText(context, "操作失败: $interactionError", Toast.LENGTH_LONG).show()
+                }
+            )
+            updatingLike = false
+        }
+    }
+
+    fun togglePluginFollow(plugin: PluginMarketPlugin) {
+        if (updatingFollow || currentUserIdentity == null) return
+        updatingFollow = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.toggleFollow(context, plugin.remotePluginId, followingByCurrentUser)
+            }
+            result.fold(
+                onSuccess = { followingByCurrentUser = it },
+                onFailure = { interactionError = pluginMarketErrorMessage(it) }
+            )
+            updatingFollow = false
+        }
+    }
+    fun submitPluginComment(plugin: PluginMarketPlugin) {
+        if (submittingComment) return
+        val content = commentDraft.trim()
+        if (content.isBlank()) {
+            Toast.makeText(context, "评论内容不能为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (currentUserIdentity == null) {
+            Toast.makeText(
+                context,
+                interactionError.ifBlank { "当前微信账号资料尚未就绪" },
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        submittingComment = true
+        interactionError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.addComment(context, plugin.remotePluginId, content)
+            }
+            result.fold(
+                onSuccess = { mutation ->
+                    mutation.comment?.let { added ->
+                        comments = (listOf(added) + comments.filterNot { it.commentId == added.commentId })
+                    }
+                    commentDraft = ""
+                    commentCountLoaded = true
+                    updateSocialCounts(plugin.remotePluginId, commentCount = mutation.commentCount)
+                },
+                onFailure = { error ->
+                    interactionError = pluginMarketErrorMessage(error)
+                    Toast.makeText(context, "评论失败: $interactionError", Toast.LENGTH_LONG).show()
+                }
+            )
+            submittingComment = false
+        }
+    }
+
+    fun submitPluginReply(
+        plugin: PluginMarketPlugin,
+        parentComment: PluginMarketComment,
+        content: String,
+        onCompleted: (Boolean) -> Unit
+    ) {
+        if (submittingComment) {
+            onCompleted(false)
+            return
+        }
+        if (currentUserIdentity == null) {
+            Toast.makeText(
+                context,
+                interactionError.ifBlank { "当前微信账号资料尚未就绪" },
+                Toast.LENGTH_LONG
+            ).show()
+            onCompleted(false)
+            return
+        }
+        submittingComment = true
+        interactionError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.replyComment(
+                    context,
+                    plugin.remotePluginId,
+                    parentComment,
+                    content
+                )
+            }
+            var succeeded = false
+            result.fold(
+                onSuccess = { mutation ->
+                    mutation.comment?.let { added ->
+                        comments = (listOf(added) + comments.filterNot {
+                            it.commentId == added.commentId
+                        })
+                    }
+                    commentCountLoaded = true
+                    updateSocialCounts(plugin.remotePluginId, commentCount = mutation.commentCount)
+                    succeeded = true
+                },
+                onFailure = { error ->
+                    interactionError = pluginMarketErrorMessage(error)
+                    Toast.makeText(context, "回复失败: $interactionError", Toast.LENGTH_LONG).show()
+                }
+            )
+            submittingComment = false
+            onCompleted(succeeded)
+        }
+    }
+
+    fun openNotifications() {
+        showNotifications = true
+        notificationRefreshVersion++
+    }
+
+    fun deletePluginComment(plugin: PluginMarketPlugin, comment: PluginMarketComment) {
+        if (deletingCommentId != null) return
+        if (!comment.canDelete) {
+            Toast.makeText(context, "只能删除自己的评论", Toast.LENGTH_SHORT).show()
+            return
+        }
+        deletingCommentId = comment.commentId
+        interactionError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                PluginMarketRepository.deleteOwnComment(context, plugin.remotePluginId, comment)
+            }
+            result.fold(
+                onSuccess = { mutation ->
+                    comments = comments.filterNot { it.commentId == comment.commentId }
+                    commentCountLoaded = true
+                    updateSocialCounts(plugin.remotePluginId, commentCount = mutation.commentCount)
+                    if (mutation.commentCount != comments.size.toLong()) commentsRetryVersion++
+                },
+                onFailure = { error ->
+                    interactionError = pluginMarketErrorMessage(error)
+                    Toast.makeText(context, "删除评论失败: $interactionError", Toast.LENGTH_LONG).show()
+                }
+            )
+            deletingCommentId = null
         }
     }
 
@@ -2712,9 +3474,29 @@ fun ScriptPluginMarketTabPage(
         title = "在线插件",
         largeTitle = "在线插件",
         scrollBehavior = scrollBehavior,
-        onBack = onBack,
-        bottomBar = { BottomActionBar("返回", onBack) }
+        topBarActions = {
+            PluginMarketNotificationBell(
+                unreadCount = notificationUnreadCount,
+                onClick = ::openNotifications
+            )
+        },
+        bottomBar = {
+            BottomActionBar(
+                primaryText = "上传本地插件",
+                onPrimaryClick = { showUploadDialog = true },
+                secondaryText = "返回",
+                onSecondaryClick = onBack
+            )
+        }
     ) { padding ->
+        PullToRefresh(
+            isRefreshing = loading,
+            onRefresh = { if (!loading) refreshVersion++ },
+            modifier = Modifier.fillMaxSize(),
+            topAppBarScrollBehavior = scrollBehavior,
+            refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新", "刷新完成"),
+            contentPadding = PaddingValues(0.dp)
+        ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
             state = listState,
@@ -2723,68 +3505,1663 @@ fun ScriptPluginMarketTabPage(
                 bottom = padding.calculateBottomPadding() + 84.dp
             )
         ) {
-            when {
-                loading -> {
-                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件") }
-                    item { EmptyText("正在从市场加载插件…") }
+            item {
+                SearchBarSurface(
+                    query = query,
+                    placeholder = "搜索插件、作者或目录名",
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    onQueryChange = { query = it }
+                )
+            }
+            item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "浏览") }
+            item {
+                SettingsCard {
+                    PopupChoiceRow(
+                        title = "排序方式",
+                        summary = if (sort == "downloads") "热门（按下载量）" else "最新发布",
+                        options = listOf(
+                            PopupChoice("最新", "latest"),
+                            PopupChoice("热门", "downloads")
+                        ),
+                        currentValue = sort,
+                        onValueChanged = { sort = it }
+                    )
+                    InsetDivider()
+                    ActionRow(
+                        title = "刷新",
+                        summary = if (loading) "正在加载在线插件" else "重新获取当前列表"
+                    ) {
+                        refreshVersion++
+                    }
                 }
-                errorText.isNotEmpty() -> {
-                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "加载失败") }
-                    item { EmptyText(errorText) }
-                    item {
-                        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
-                            ActionRow("重试", "重新从市场拉取插件列表") { refreshVersion++ }
+            }
+            item {
+                SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+                    Text(
+                        text = "社区插件由用户上传，安装前请核对作者、说明和文件内容。下载后的插件默认禁用。",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)
+                    )
+                }
+            }
+            item {
+                SmallTitle(
+                    modifier = Modifier.padding(top = 10.dp),
+                    text = "在线插件(${if (loading && plugins.isEmpty()) "-" else pluginCount})"
+                )
+            }
+            if (loadError.isNotBlank()) {
+                item {
+                    SettingsCard {
+                        Column {
+                            EmptyText(loadError)
+                            TextButton(
+                                text = "重试",
+                                onClick = { refreshVersion++ },
+                                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                                colors = ButtonDefaults.textButtonColorsPrimary()
+                            )
                         }
                     }
                 }
-                plugins.isEmpty() -> {
-                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件") }
-                    item { EmptyText("市场暂无插件") }
+            } else if (loading && plugins.isEmpty()) {
+                item { SettingsCard { EmptyText("正在加载在线插件...") } }
+            } else if (plugins.isEmpty()) {
+                item {
+                    SettingsCard {
+                        EmptyText(if (query.isBlank()) "暂无在线插件" else "没有匹配的在线插件")
+                    }
                 }
-                else -> {
-                    item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "在线插件(${plugins.size})") }
-                    items(plugins, key = { it.remotePluginId }) { plugin ->
-                        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = plugin.name,
-                                    fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                                    fontWeight = FontWeight.Medium,
-                                    color = BasicComponentDefaults.titleColor().color,
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = "作者: ${plugin.author.ifBlank { "未知" }} | 版本: ${plugin.version}",
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = BasicComponentDefaults.summaryColor().color,
-                                )
-                                Text(
-                                    text = "下载 ${plugin.downloadCount} · 点赞 ${plugin.likeCount} · 评论 ${plugin.commentCount}",
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = BasicComponentDefaults.summaryColor().color,
-                                )
-                                if (plugin.description.isNotBlank()) {
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(
-                                        text = plugin.description,
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = BasicComponentDefaults.summaryColor().color,
-                                    )
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                TextButton(
-                                    text = if (installingId == plugin.remotePluginId) "安装中…" else "安装",
-                                    onClick = { install(plugin) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                                )
+            } else {
+                item {
+                    SettingsCard {
+                        plugins.forEachIndexed { index, plugin ->
+                            PluginMarketListRow(plugin) {
+                                selectedPlugin = plugin
                             }
+                            if (index != plugins.lastIndex) InsetDivider()
                         }
                     }
                 }
             }
         }
+        }
     }
+
+    selectedPlugin?.let { summary ->
+        PluginMarketDetailDialog(
+            summary = summary,
+            detail = detailPlugin,
+            loading = detailLoading,
+            error = detailError,
+            historyVersions = historyVersions,
+            historyLoading = historyLoading,
+            historyError = historyError,
+            historyInstallVersionId = historyInstallVersionId,
+            installed = detailTargetExists,
+            installing = installingRemoteId == summary.remotePluginId,
+            deleting = deletingRemoteId == summary.remotePluginId,
+            owned = PluginMarketRepository.ownsRemotePlugin(context, summary.remotePluginId),
+            installMessage = installMessage,
+            likedByCurrentUser = likedByCurrentUser,
+            followingByCurrentUser = followingByCurrentUser,
+            updatingLike = updatingLike,
+            updatingFollow = updatingFollow,
+            comments = comments,
+            commentsLoading = commentsLoading,
+            commentsError = commentsError,
+            currentUserWxId = currentUserIdentity?.wxId.orEmpty(),
+            interactionError = interactionError,
+            commentDraft = commentDraft,
+            submittingComment = submittingComment,
+            deletingCommentId = deletingCommentId,
+            onRetry = { detailRetryVersion++ },
+            onRetryComments = { commentsRetryVersion++ },
+            onInstall = ::requestInstall,
+            onInstallHistory = ::requestHistoryInstall,
+            onToggleLike = { togglePluginLike(summary) },
+            onToggleFollow = { togglePluginFollow(summary) },
+            onCommentDraftChanged = { value -> commentDraft = value.take(1000) },
+            onSubmitComment = { submitPluginComment(summary) },
+            onDeleteComment = { comment -> deletePluginComment(summary, comment) },
+            onSubmitReply = { comment, content, onCompleted ->
+                submitPluginReply(summary, comment, content, onCompleted)
+            },
+            onDelete = { deleteOwnedPlugin(summary) },
+            onDismiss = {
+                if (
+                    installingRemoteId == null &&
+                    deletingRemoteId == null &&
+                    !updatingLike &&
+                    !submittingComment &&
+                    deletingCommentId == null
+                ) {
+                    selectedPlugin = null
+                    detailPlugin = null
+                    detailError = ""
+                    historyVersions = emptyList()
+                    historyError = ""
+                    comments = emptyList()
+                    commentsError = ""
+                    currentUserIdentity = null
+                    interactionError = ""
+                    commentDraft = ""
+                    installMessage = ""
+                }
+            }
+        )
+    }
+
+    pendingOverwrite?.let { plugin ->
+        WindowDialog(
+            show = true,
+            title = "覆盖本地插件",
+            onDismissRequest = { pendingOverwrite = null },
+            content = {
+                Column {
+                    Text(
+                        text = "本地已存在目录“${PluginMarketInstaller.defaultLocalPluginId(plugin)}”。更新会覆盖 main.java、main.java.bshs、info.prop 和 README.md，并保留其它本地配置文件。更新后插件保持禁用。",
+                        color = MiuixTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TextButton(
+                            text = "取消",
+                            onClick = { pendingOverwrite = null },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                        TextButton(
+                            text = "确认覆盖",
+                            onClick = {
+                                pendingOverwrite = null
+                                performInstall(plugin, overwrite = true)
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    if (showUploadDialog) {
+        PluginMarketUploadDialog(
+            context = context,
+            onDismiss = { uploaded ->
+                showUploadDialog = false
+                if (uploaded) refreshVersion++
+            }
+        )
+    }
+
+    if (showNotifications) {
+        PluginMarketNotificationDialog(
+            notifications = notifications,
+            loading = notificationsLoading,
+            error = notificationsError,
+            onRetry = { notificationRefreshVersion++ },
+            onNotificationClick = { notification ->
+                showNotifications = false
+                val target = plugins.firstOrNull {
+                    it.remotePluginId == notification.remotePluginId
+                } ?: PluginMarketPlugin(
+                    remotePluginId = notification.remotePluginId,
+                    sourcePluginId = "",
+                    name = notification.pluginName,
+                    author = "",
+                    version = "",
+                    versionId = "",
+                    updateTime = "",
+                    downloadCount = 0L,
+                    likeCount = 0L,
+                    commentCount = 0L,
+                    description = "",
+                    files = emptyList()
+                )
+                val activity = context as? Activity
+                    ?: WeChatApis.currentActivity()?.currentActivity() as? Activity
+                if (activity == null) {
+                    selectedPlugin = target
+                } else {
+                    activity.window?.decorView?.postOnAnimation {
+                        if (!activity.isFinishing && !activity.isDestroyed) selectedPlugin = target
+                    }
+                }
+            },
+            onDismiss = { showNotifications = false }
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketNotificationBell(
+    unreadCount: Long,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.size(40.dp).responsiveTap(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            imageVector = NavIcons.Bell,
+            contentDescription = "回复通知",
+            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onSurface),
+            modifier = Modifier.size(24.dp)
+        )
+        if (unreadCount > 0L) {
+            Box(
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .height(16.dp)
+                    .sizeIn(minWidth = 16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFD93025))
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (unreadCount > 99L) "99+" else unreadCount.toString(),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PluginMarketNotificationDialog(
+    notifications: List<PluginMarketNotification>,
+    loading: Boolean,
+    error: String,
+    onRetry: () -> Unit,
+    onNotificationClick: (PluginMarketNotification) -> Unit,
+    onDismiss: () -> Unit
+) {
+    WindowDialog(
+        show = true,
+        title = "回复通知",
+        onDismissRequest = onDismiss,
+        content = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "共 ${notifications.size} 条",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp
+                    )
+                    TextButton(
+                        text = if (loading) "正在刷新" else "刷新",
+                        onClick = onRetry,
+                        enabled = !loading,
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    when {
+                        loading && notifications.isEmpty() -> EmptyText("正在加载回复通知...")
+                        error.isNotBlank() && notifications.isEmpty() -> {
+                            EmptyText(error)
+                            TextButton(
+                                text = "重试",
+                                onClick = onRetry,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.textButtonColorsPrimary()
+                            )
+                        }
+                        notifications.isEmpty() -> EmptyText("暂无回复通知")
+                        else -> notifications.forEachIndexed { index, notification ->
+                            PluginMarketNotificationRow(
+                                notification = notification,
+                                onClick = { onNotificationClick(notification) }
+                            )
+                            if (index != notifications.lastIndex) Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                }
+                TextButton(
+                    text = "关闭",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun PluginMarketNotificationRow(
+    notification: PluginMarketNotification,
+    onClick: () -> Unit
+) {
+    var pressed by remember(notification.notificationId) { mutableStateOf(false) }
+    val feedbackColor = rememberPressFeedbackColor(pressed)
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (pressed) feedbackColor else MiuixTheme.colorScheme.secondaryVariant
+            )
+            .responsiveTap(onClick = onClick, onPressedChange = { pressed = it })
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = when (notification.type) {
+                "plugin_comment" -> "${notification.actorNickname.ifBlank { "微信用户" }} 评论了你的插件"
+                "plugin_update" -> "你关注的插件发布了新版本"
+                else -> "${notification.actorNickname.ifBlank { "微信用户" }} 回复了你的评论"
+            },
+            color = MiuixTheme.colorScheme.onSurface,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = notification.pluginName.ifBlank { notification.remotePluginId },
+            color = MiuixTheme.colorScheme.primary,
+            fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+        )
+        Text(
+            text = notification.content,
+            color = MiuixTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 7.dp)
+        )
+        Text(
+            text = "原评论：${notification.originalContent}",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+        )
+        Text(
+            text = formatPluginMarketTime(notification.createdAt),
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketListRow(
+    plugin: PluginMarketPlugin,
+    onClick: () -> Unit
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val pressFeedbackColor = rememberPressFeedbackColor(pressed)
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(pressFeedbackColor)
+            .responsiveTap(onClick = onClick, onPressedChange = { pressed = it })
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = plugin.name.ifBlank { plugin.remotePluginId },
+                color = MiuixTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = buildString {
+                    append("作者: ").append(plugin.author.ifBlank { "未知" })
+                    append(" | 版本: ").append(plugin.version.ifBlank { "未知" })
+                    append(" | 下载: ").append(plugin.downloadCount)
+                    append("\n点赞: ").append(plugin.likeCount)
+                    append(" | 评论: ").append(plugin.commentCount)
+                    append("\n更新: ").append(formatPluginMarketTime(plugin.updateTime))
+                },
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 12.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = "›",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 22.sp,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketDetailDialog(
+    summary: PluginMarketPlugin,
+    detail: PluginMarketPlugin?,
+    loading: Boolean,
+    error: String,
+    historyVersions: List<PluginMarketHistoryVersion>,
+    historyLoading: Boolean,
+    historyError: String,
+    historyInstallVersionId: String?,
+    installed: Boolean,
+    installing: Boolean,
+    deleting: Boolean,
+    owned: Boolean,
+    installMessage: String,
+    likedByCurrentUser: Boolean,
+    followingByCurrentUser: Boolean,
+    updatingLike: Boolean,
+    updatingFollow: Boolean,
+    comments: List<PluginMarketComment>,
+    commentsLoading: Boolean,
+    commentsError: String,
+    currentUserWxId: String,
+    interactionError: String,
+    commentDraft: String,
+    submittingComment: Boolean,
+    deletingCommentId: String?,
+    onRetry: () -> Unit,
+    onRetryComments: () -> Unit,
+    onInstall: (PluginMarketPlugin) -> Unit,
+    onInstallHistory: (PluginMarketHistoryVersion) -> Unit,
+    onToggleLike: () -> Unit,
+    onToggleFollow: () -> Unit,
+    onCommentDraftChanged: (String) -> Unit,
+    onSubmitComment: () -> Unit,
+    onDeleteComment: (PluginMarketComment) -> Unit,
+    onSubmitReply: (PluginMarketComment, String, (Boolean) -> Unit) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var confirmDelete by remember(summary.remotePluginId) { mutableStateOf(false) }
+    var pendingDeleteComment by remember(summary.remotePluginId) {
+        mutableStateOf<PluginMarketComment?>(null)
+    }
+    var replyTarget by remember(summary.remotePluginId) {
+        mutableStateOf<PluginMarketComment?>(null)
+    }
+    var replyDraft by remember(summary.remotePluginId) { mutableStateOf("") }
+    WindowDialog(
+        show = true,
+        title = summary.name.ifBlank { "插件详情" },
+        onDismissRequest = onDismiss,
+        content = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp).imePadding()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    val shownPlugin = detail ?: summary
+                    PluginMarketDialogInfoRow("作者", shownPlugin.author.ifBlank { "未知" })
+                    PluginMarketDialogInfoRow("版本", shownPlugin.version.ifBlank { "未知" })
+                    PluginMarketDialogInfoRow("更新时间", formatPluginMarketTime(shownPlugin.updateTime))
+                    PluginMarketDialogInfoRow("下载量", shownPlugin.downloadCount.toString())
+                    PluginMarketDialogInfoRow("点赞数", shownPlugin.likeCount.toString())
+                    PluginMarketDialogInfoRow("评论数", shownPlugin.commentCount.toString())
+                    PluginMarketDialogInfoRow("插件 ID", summary.remotePluginId)
+                    if (detail?.description?.isNotBlank() == true) {
+                        Text(
+                            text = detail.description,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            fontSize = 14.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                        )
+                    }
+                    if (detail != null) {
+                        Text(
+                            text = "包含文件",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        Text(
+                            text = detail.files.joinToString("、") { it.name }.ifBlank { "未知" },
+                            color = MiuixTheme.colorScheme.onSurface,
+                            fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        )
+                        detail.files.firstOrNull { it.name.equals("README.md", ignoreCase = true) }
+                            ?.content?.takeIf { it.isNotBlank() }
+                            ?.let { readme ->
+                                Text(
+                                    text = "插件说明",
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 12.dp)
+                                )
+                                Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                                    MarkdownUi.Content(
+                                        context = context,
+                                        markdown = readme,
+                                        contentPadding = PaddingValues(0.dp)
+                                    )
+                                }
+                            }
+                    }
+                    PluginMarketSocialSection(
+                        likeCount = shownPlugin.likeCount,
+                        commentCount = shownPlugin.commentCount,
+                        likedByCurrentUser = likedByCurrentUser,
+                        followingByCurrentUser = followingByCurrentUser,
+                        updatingLike = updatingLike,
+                        updatingFollow = updatingFollow,
+                        comments = comments,
+                        commentsLoading = commentsLoading,
+                        commentsError = commentsError,
+                        currentUserWxId = currentUserWxId,
+                        interactionError = interactionError,
+                        commentDraft = commentDraft,
+                        submittingComment = submittingComment,
+                        deletingCommentId = deletingCommentId,
+                        enabled = !installing && !deleting,
+                        onToggleLike = onToggleLike,
+                        onToggleFollow = onToggleFollow,
+                        onCommentDraftChanged = onCommentDraftChanged,
+                        onSubmitComment = onSubmitComment,
+                        onRetryComments = onRetryComments,
+                        onDeleteComment = { pendingDeleteComment = it },
+                        onReplyComment = { comment ->
+                            replyTarget = comment
+                            replyDraft = ""
+                        }
+                    )
+                    PluginMarketHistoryUi.HistoryList(
+                        versions = historyVersions,
+                        loading = historyLoading,
+                        error = historyError,
+                        installingVersionId = historyInstallVersionId,
+                        enabled = !installing,
+                        onRetry = onRetry,
+                        onInstall = onInstallHistory
+                    )
+                    Text(
+                        text = "社区插件可能执行敏感操作，请确认来源可信。安装或更新完成后插件保持禁用。",
+                        color = Color(0xFFD93025),
+                        fontSize = 13.sp,
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+                    )
+                    when {
+                        loading -> EmptyText("正在加载插件详情...")
+                        error.isNotBlank() -> {
+                            EmptyText(error)
+                            TextButton(
+                                text = "重新加载",
+                                onClick = onRetry,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.textButtonColorsPrimary()
+                            )
+                        }
+                    }
+                    if (installMessage.isNotBlank()) {
+                        Text(
+                            text = installMessage,
+                            color = if (installMessage.startsWith("安装失败")) {
+                                Color(0xFFD93025)
+                            } else {
+                                MiuixTheme.colorScheme.primary
+                            },
+                            fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                val activeReply = replyTarget
+                if (activeReply != null) {
+                    val focusRequester = remember(activeReply.commentId) { FocusRequester() }
+                    val keyboardController = LocalSoftwareKeyboardController.current
+                    LaunchedEffect(activeReply.commentId) {
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MiuixTheme.colorScheme.secondaryVariant)
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "回复 ${activeReply.userNickname.ifBlank { "微信用户" }}",
+                            color = MiuixTheme.colorScheme.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = activeReply.content.replace('\n', ' ').trim(),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                        )
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MiuixTheme.colorScheme.background)
+                                .padding(horizontal = 10.dp, vertical = 9.dp)
+                        ) {
+                            if (replyDraft.isBlank()) {
+                                Text(
+                                    text = "回复 ${activeReply.userNickname.ifBlank { "微信用户" }}",
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            BasicTextField(
+                                value = replyDraft,
+                                onValueChange = { replyDraft = it.take(1000) },
+                                enabled = !submittingComment,
+                                minLines = 1,
+                                maxLines = 4,
+                                textStyle = TextStyle(
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp
+                                ),
+                                cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${replyDraft.length}/1000",
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                fontSize = 11.sp
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    text = "取消",
+                                    onClick = {
+                                        replyTarget = null
+                                        replyDraft = ""
+                                    },
+                                    enabled = !submittingComment,
+                                    colors = ButtonDefaults.textButtonColorsPrimary()
+                                )
+                                TextButton(
+                                    text = if (submittingComment) "正在回复" else "发送",
+                                    onClick = {
+                                        val content = replyDraft.trim()
+                                        if (content.isNotBlank()) {
+                                            onSubmitReply(activeReply, content) { succeeded ->
+                                                if (succeeded) {
+                                                    replyTarget = null
+                                                    replyDraft = ""
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = replyDraft.isNotBlank() && !submittingComment,
+                                    colors = ButtonDefaults.textButtonColorsPrimary()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TextButton(
+                            text = "关闭",
+                            onClick = onDismiss,
+                            enabled = !installing && !deleting && !updatingLike &&
+                                !submittingComment && deletingCommentId == null,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                        if (owned) {
+                            TextButton(
+                                text = if (deleting) "正在删除" else "删除",
+                                onClick = { confirmDelete = true },
+                                enabled = !installing && !deleting && !updatingLike &&
+                                    !submittingComment && deletingCommentId == null,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.textButtonColorsPrimary()
+                            )
+                        }
+                        if (installing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                size = 18.dp
+                            )
+                        }
+                        TextButton(
+                            text = when {
+                                installing -> "正在处理"
+                                installed -> "更新"
+                                else -> "安装"
+                            },
+                            onClick = { detail?.let(onInstall) },
+                            enabled = detail != null && !loading && error.isBlank() && !installing &&
+                                !deleting && !updatingLike && !submittingComment && deletingCommentId == null,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
+                }
+            }
+        }
+    )
+    if (confirmDelete) {
+        WindowDialog(
+            show = true,
+            title = "删除线上插件",
+            onDismissRequest = { confirmDelete = false },
+            content = {
+                Column {
+                    Text(
+                        text = "确定删除“${summary.name.ifBlank { summary.remotePluginId }}”吗？线上插件及全部历史版本都会被删除，本地插件不会删除。此操作无法撤销。",
+                        color = MiuixTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TextButton(
+                            text = "取消",
+                            onClick = { confirmDelete = false },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                        TextButton(
+                            text = "确认删除",
+                            onClick = {
+                                confirmDelete = false
+                                onDelete()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
+                }
+            }
+        )
+    }
+    pendingDeleteComment?.let { comment ->
+        WindowDialog(
+            show = true,
+            title = "删除评论",
+            onDismissRequest = { pendingDeleteComment = null },
+            content = {
+                Column {
+                    Text(
+                        text = "确定删除这条评论吗？此操作无法撤销。",
+                        color = MiuixTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TextButton(
+                            text = "取消",
+                            onClick = { pendingDeleteComment = null },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                        TextButton(
+                            text = "确认删除",
+                            onClick = {
+                                pendingDeleteComment = null
+                                onDeleteComment(comment)
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketSocialSection(
+    likeCount: Long,
+    commentCount: Long,
+    likedByCurrentUser: Boolean,
+    followingByCurrentUser: Boolean,
+    updatingLike: Boolean,
+    updatingFollow: Boolean,
+    comments: List<PluginMarketComment>,
+    commentsLoading: Boolean,
+    commentsError: String,
+    currentUserWxId: String,
+    interactionError: String,
+    commentDraft: String,
+    submittingComment: Boolean,
+    deletingCommentId: String?,
+    enabled: Boolean,
+    onToggleLike: () -> Unit,
+    onToggleFollow: () -> Unit,
+    onCommentDraftChanged: (String) -> Unit,
+    onSubmitComment: () -> Unit,
+    onRetryComments: () -> Unit,
+    onDeleteComment: (PluginMarketComment) -> Unit,
+    onReplyComment: (PluginMarketComment) -> Unit
+) {
+    Text(
+        text = "互动",
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(top = 16.dp)
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            text = when {
+                updatingLike -> "正在处理"
+                likedByCurrentUser -> "取消点赞"
+                else -> "点赞"
+            },
+            onClick = onToggleLike,
+            enabled = enabled && currentUserWxId.isNotBlank() && !updatingLike,
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.textButtonColorsPrimary()
+        )
+        TextButton(
+            text = when {
+                updatingFollow -> "正在处理"
+                followingByCurrentUser -> "取消关注"
+                else -> "关注插件"
+            },
+            onClick = onToggleFollow,
+            enabled = enabled && currentUserWxId.isNotBlank() && !updatingFollow,
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.textButtonColorsPrimary()
+        )
+        Text(
+            text = "$likeCount 个赞 · $commentCount 条评论",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Text(
+        text = "发表评论",
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(top = 10.dp)
+    )
+    BasicTextField(
+        value = commentDraft,
+        onValueChange = onCommentDraftChanged,
+        enabled = enabled && currentUserWxId.isNotBlank() && !submittingComment,
+        minLines = 2,
+        maxLines = 4,
+        textStyle = TextStyle(color = MiuixTheme.colorScheme.onSurface, fontSize = 14.sp),
+        cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.TopStart) {
+                if (commentDraft.isBlank()) {
+                    Text(
+                        text = if (currentUserWxId.isBlank()) "当前微信账号资料尚未就绪" else "填写评论内容",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 14.sp
+                    )
+                }
+                innerTextField()
+            }
+        },
+        modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MiuixTheme.colorScheme.secondaryVariant)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "${commentDraft.length}/1000",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 12.sp
+        )
+        TextButton(
+            text = if (submittingComment) "正在发表" else "发表",
+            onClick = onSubmitComment,
+            enabled = enabled && currentUserWxId.isNotBlank() &&
+                commentDraft.isNotBlank() && !submittingComment,
+            colors = ButtonDefaults.textButtonColorsPrimary()
+        )
+    }
+    if (interactionError.isNotBlank()) {
+        Text(
+            text = interactionError,
+            color = Color(0xFFD93025),
+            fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
+    }
+    Text(
+        text = "评论 ($commentCount)",
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(top = 10.dp)
+    )
+    val commentThreads = remember(comments) { buildPluginMarketCommentThreads(comments) }
+    when {
+        commentsLoading -> EmptyText("正在加载评论...")
+        commentsError.isNotBlank() -> {
+            EmptyText(commentsError)
+            TextButton(
+                text = "重试",
+                onClick = onRetryComments,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary()
+            )
+        }
+        comments.isEmpty() -> EmptyText("暂无评论")
+        else -> commentThreads.forEachIndexed { index, thread ->
+            PluginMarketCommentRow(
+                comment = thread.root,
+                deleting = deletingCommentId == thread.root.commentId,
+                enabled = enabled && deletingCommentId == null,
+                onDelete = { onDeleteComment(thread.root) },
+                onReply = { onReplyComment(thread.root) }
+            )
+            if (thread.replies.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, bottom = 8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MiuixTheme.colorScheme.secondaryVariant)
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    thread.replies.forEachIndexed { replyIndex, reply ->
+                        PluginMarketReplyRow(
+                            comment = reply,
+                            deleting = deletingCommentId == reply.commentId,
+                            enabled = enabled && deletingCommentId == null,
+                            onDelete = { onDeleteComment(reply) },
+                            onReply = { onReplyComment(reply) }
+                        )
+                        if (replyIndex != thread.replies.lastIndex) InsetDivider()
+                    }
+                }
+            }
+            if (index != commentThreads.lastIndex) InsetDivider()
+        }
+    }
+}
+
+@Composable
+private fun PluginMarketCommentRow(
+    comment: PluginMarketComment,
+    deleting: Boolean,
+    enabled: Boolean,
+    onDelete: () -> Unit,
+    onReply: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(enabled = enabled, onClick = onReply)
+                .padding(vertical = 7.dp)
+        ) {
+            Text(
+                text = comment.userNickname.ifBlank { "微信用户" },
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = formatPluginMarketTime(comment.createdAt),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 11.sp
+            )
+            Text(
+                text = comment.content,
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
+        }
+        if (comment.canDelete) {
+            TextButton(
+                text = if (deleting) "正在删除" else "删除",
+                onClick = onDelete,
+                enabled = enabled && !deleting,
+                colors = ButtonDefaults.textButtonColorsPrimary()
+            )
+        }
+    }
+}
+
+@Composable
+private fun PluginMarketReplyRow(
+    comment: PluginMarketComment,
+    deleting: Boolean,
+    enabled: Boolean,
+    onDelete: () -> Unit,
+    onReply: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+                .clip(RoundedCornerShape(4.dp))
+                .clickable(enabled = enabled, onClick = onReply)
+                .padding(vertical = 6.dp)
+        ) {
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Medium)) {
+                        append(comment.userNickname.ifBlank { "微信用户" })
+                    }
+                    append(" 回复 ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Medium)) {
+                        append(comment.replyToNickname.ifBlank { "微信用户" })
+                    }
+                    append("：")
+                    append(comment.content)
+                },
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = formatPluginMarketTime(comment.createdAt),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        if (comment.canDelete) {
+            TextButton(
+                text = if (deleting) "正在删除" else "删除",
+                onClick = onDelete,
+                enabled = enabled && !deleting,
+                colors = ButtonDefaults.textButtonColorsPrimary()
+            )
+        }
+    }
+}
+
+private data class PluginMarketCommentThread(
+    val root: PluginMarketComment,
+    val replies: List<PluginMarketComment>
+)
+
+private fun buildPluginMarketCommentThreads(
+    comments: List<PluginMarketComment>
+): List<PluginMarketCommentThread> {
+    val commentsById = comments.associateBy { it.commentId }
+    val roots = comments.filter { comment ->
+        comment.parentCommentId.isBlank() || comment.parentCommentId !in commentsById
+    }.sortedWith(
+        compareByDescending<PluginMarketComment> { it.createdAt }
+            .thenByDescending { it.commentId }
+    )
+    val repliesByRoot = linkedMapOf<String, MutableList<PluginMarketComment>>()
+    comments.filter { it.parentCommentId.isNotBlank() }.forEach { comment ->
+        var cursor = comment
+        val visited = mutableSetOf(comment.commentId)
+        while (cursor.parentCommentId.isNotBlank()) {
+            val parent = commentsById[cursor.parentCommentId] ?: break
+            if (!visited.add(parent.commentId)) break
+            cursor = parent
+        }
+        if (cursor.commentId != comment.commentId) {
+            repliesByRoot.getOrPut(cursor.commentId) { mutableListOf() }.add(comment)
+        }
+    }
+    return roots.map { root ->
+        PluginMarketCommentThread(
+            root = root,
+            replies = repliesByRoot[root.commentId].orEmpty().sortedWith(
+                compareBy<PluginMarketComment> { it.createdAt }.thenBy { it.commentId }
+            )
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketDialogInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 13.sp
+        )
+        Text(
+            text = value,
+            color = MiuixTheme.colorScheme.onSurface,
+            fontSize = 13.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f).padding(start = 16.dp)
+        )
+    }
+}
+
+@Composable
+private fun PluginMarketUploadDialog(
+    context: Context,
+    onDismiss: (Boolean) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf("") }
+    var localPlugins by remember { mutableStateOf<List<ScriptPluginRuntime.ScriptPlugin>>(emptyList()) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var remoteNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var releaseNotes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var extraFiles by remember { mutableStateOf<Map<String, List<PluginMarketFile>>>(emptyMap()) }
+    var statuses by remember { mutableStateOf<Map<String, PluginMarketUploadStatus>>(emptyMap()) }
+    var uploading by remember { mutableStateOf(false) }
+    var uploadedAny by remember { mutableStateOf(false) }
+    var reloadVersion by remember { mutableStateOf(0) }
+
+    LaunchedEffect(reloadVersion) {
+        loading = true
+        loadError = ""
+        val result = runCatching {
+            withContext(Dispatchers.IO) { ScriptPluginRuntime.listPlugins(context) }
+        }
+        result.fold(
+            onSuccess = { plugins ->
+                localPlugins = plugins
+                remoteNames = plugins.associate { plugin ->
+                    plugin.id to (plugin.displayName ?: plugin.name).ifBlank { plugin.id }
+                }
+                releaseNotes = plugins.associate { plugin ->
+                    plugin.id to releaseNotes[plugin.id].orEmpty()
+                }
+                extraFiles = extraFiles.filterKeys { id -> plugins.any { it.id == id } }
+                selectedIds = selectedIds.intersect(plugins.mapTo(LinkedHashSet()) { it.id })
+            },
+            onFailure = { error -> loadError = pluginMarketErrorMessage(error) }
+        )
+        loading = false
+    }
+
+    val normalizedQuery = query.trim().lowercase(Locale.US)
+    val filteredPlugins = localPlugins.filter { plugin ->
+        normalizedQuery.isEmpty() ||
+            plugin.id.lowercase(Locale.US).contains(normalizedQuery) ||
+            plugin.name.lowercase(Locale.US).contains(normalizedQuery) ||
+            plugin.author.lowercase(Locale.US).contains(normalizedQuery)
+    }
+    val allFilteredSelected = filteredPlugins.isNotEmpty() && filteredPlugins.all { it.id in selectedIds }
+
+    fun startUpload() {
+        if (uploading || selectedIds.isEmpty()) return
+        val ordered = localPlugins.filter { it.id in selectedIds }
+        if (ordered.any { remoteNames[it.id].orEmpty().trim().isBlank() }) {
+            Toast.makeText(context, "在线插件名不能为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        statuses = ordered.associate { plugin ->
+            plugin.id to PluginMarketUploadStatus(PluginMarketUploadPhase.QUEUED, "等待上传")
+        }
+        uploading = true
+        scope.launch {
+            var publishedCount = 0
+            var pendingCount = 0
+            ordered.forEach { plugin ->
+                statuses = statuses + (
+                    plugin.id to PluginMarketUploadStatus(PluginMarketUploadPhase.UPLOADING, "正在上传")
+                )
+                val result = withContext(Dispatchers.IO) {
+                    PluginMarketRepository.upload(
+                        context = context,
+                        localPluginId = plugin.id,
+                        remoteName = remoteNames[plugin.id].orEmpty().trim(),
+                        releaseNotes = releaseNotes[plugin.id].orEmpty().trim(),
+                        extraFiles = extraFiles[plugin.id].orEmpty()
+                    )
+                }
+                result.fold(
+                    onSuccess = { ownership ->
+                        uploadedAny = true
+                        when (ownership.reviewStatus) {
+                            PluginMarketReviewStatus.PENDING -> {
+                                pendingCount++
+                                statuses = statuses + (
+                                    plugin.id to PluginMarketUploadStatus(
+                                        PluginMarketUploadPhase.PENDING_REVIEW,
+                                        "上传成功，待审核 · ${ownership.remotePluginId}"
+                                    )
+                                )
+                            }
+                            PluginMarketReviewStatus.APPROVED -> {
+                                publishedCount++
+                                statuses = statuses + (
+                                    plugin.id to PluginMarketUploadStatus(
+                                        PluginMarketUploadPhase.SUCCESS,
+                                        "上传成功 · ${ownership.remotePluginId}"
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    onFailure = { error ->
+                        statuses = statuses + (
+                            plugin.id to PluginMarketUploadStatus(
+                                PluginMarketUploadPhase.FAILED,
+                                "上传失败: ${pluginMarketErrorMessage(error)}"
+                            )
+                        )
+                    }
+                )
+            }
+            uploading = false
+            Toast.makeText(
+                context,
+                "上传完成：已发布 $publishedCount，待审核 $pendingCount，失败 ${ordered.size - publishedCount - pendingCount}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    WindowDialog(
+        show = true,
+        title = "上传本地插件",
+        onDismissRequest = { if (!uploading) onDismiss(uploadedAny) },
+        content = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 620.dp)) {
+                SearchBarSurface(
+                    query = query,
+                    placeholder = "搜索本地插件",
+                    onQueryChange = { if (!uploading) query = it }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "已选 ${selectedIds.size} / ${localPlugins.size}",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = if (allFilteredSelected) "取消当前筛选" else "全选当前筛选",
+                        color = if (filteredPlugins.isEmpty() || uploading) {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        } else {
+                            MiuixTheme.colorScheme.primary
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable(enabled = filteredPlugins.isNotEmpty() && !uploading) {
+                            val filteredIds = filteredPlugins.mapTo(LinkedHashSet()) { it.id }
+                            selectedIds = if (allFilteredSelected) {
+                                selectedIds - filteredIds
+                            } else {
+                                selectedIds + filteredIds
+                            }
+                        }.padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
+                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                    when {
+                        loading -> item { EmptyText("正在读取本地插件...") }
+                        loadError.isNotBlank() -> item {
+                            Column {
+                                EmptyText(loadError)
+                                TextButton(
+                                    text = "重试",
+                                    onClick = { reloadVersion++ },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.textButtonColorsPrimary()
+                                )
+                            }
+                        }
+                        localPlugins.isEmpty() -> item { EmptyText("没有可运行的本地插件") }
+                        filteredPlugins.isEmpty() -> item { EmptyText("没有匹配的本地插件") }
+                        else -> items(filteredPlugins.size, key = { filteredPlugins[it].id }) { index ->
+                            val plugin = filteredPlugins[index]
+                            if (index > 0) InsetDivider(start = 0.dp)
+                            PluginMarketUploadRow(
+                                plugin = plugin,
+                                selected = plugin.id in selectedIds,
+                                remoteName = remoteNames[plugin.id].orEmpty(),
+                                releaseNotes = releaseNotes[plugin.id].orEmpty(),
+                                extraFiles = extraFiles[plugin.id].orEmpty(),
+                                status = statuses[plugin.id],
+                                enabled = !uploading,
+                                onSelectedChange = { selected ->
+                                    selectedIds = if (selected) selectedIds + plugin.id else selectedIds - plugin.id
+                                },
+                                onRemoteNameChange = { name ->
+                                    remoteNames = remoteNames + (plugin.id to name.take(100))
+                                },
+                                onReleaseNotesChange = { notes ->
+                                    releaseNotes = releaseNotes + (plugin.id to notes.take(500))
+                                },
+                                onPickExtraFiles = {
+                                    context.findActivity()?.let { activity ->
+                                        PluginMarketExtraFilePickerBridge.launch(activity) { files ->
+                                            val existing = extraFiles[plugin.id].orEmpty()
+                                            val merged = (files + existing).distinctBy {
+                                                it.name.lowercase(Locale.ROOT)
+                                            }
+                                            extraFiles = extraFiles + (plugin.id to merged)
+                                        }
+                                    } ?: Toast.makeText(
+                                        context,
+                                        "无法打开文件选择器",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onClearExtraFiles = {
+                                    extraFiles = extraFiles - plugin.id
+                                }
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TextButton(
+                        text = "关闭",
+                        onClick = { onDismiss(uploadedAny) },
+                        enabled = !uploading,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                    TextButton(
+                        text = if (uploading) "正在上传" else "上传已选",
+                        onClick = ::startUpload,
+                        enabled = !uploading && selectedIds.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun PluginMarketUploadRow(
+    plugin: ScriptPluginRuntime.ScriptPlugin,
+    selected: Boolean,
+    remoteName: String,
+    releaseNotes: String,
+    extraFiles: List<PluginMarketFile>,
+    status: PluginMarketUploadStatus?,
+    enabled: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+    onRemoteNameChange: (String) -> Unit,
+    onReleaseNotesChange: (String) -> Unit,
+    onPickExtraFiles: () -> Unit,
+    onClearExtraFiles: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { onSelectedChange(!selected) }
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = plugin.name.ifBlank { plugin.id },
+                    color = MiuixTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = buildString {
+                        append(plugin.id)
+                        append(" · ").append(plugin.author.ifBlank { "未知作者" })
+                        append(" · ").append(plugin.version.ifBlank { "未知版本" })
+                    },
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            SelectionMark(selected = selected, multiSelect = true)
+        }
+        if (selected) {
+            Text(
+                text = "在线名称",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+            )
+            BasicTextField(
+                value = remoteName,
+                onValueChange = onRemoteNameChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = TextStyle(color = MiuixTheme.colorScheme.onSurface, fontSize = 14.sp),
+                cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MiuixTheme.colorScheme.secondaryVariant)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+            Text(
+                text = "更新说明",
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+            )
+            BasicTextField(
+                value = releaseNotes,
+                onValueChange = onReleaseNotesChange,
+                enabled = enabled,
+                minLines = 2,
+                maxLines = 3,
+                textStyle = TextStyle(color = MiuixTheme.colorScheme.onSurface, fontSize = 14.sp),
+                cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.TopStart) {
+                        if (releaseNotes.isBlank()) {
+                            Text(
+                                text = "填写本次版本的更新内容",
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                fontSize = 14.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MiuixTheme.colorScheme.secondaryVariant)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "附加文件${if (extraFiles.isEmpty()) "" else " (${extraFiles.size})"}",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        fontSize = 12.sp
+                    )
+                    if (extraFiles.isNotEmpty()) {
+                        Text(
+                            text = extraFiles.joinToString("、") { it.name },
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+                TextButton(
+                    text = "选择",
+                    onClick = onPickExtraFiles,
+                    enabled = enabled,
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+                if (extraFiles.isNotEmpty()) {
+                    TextButton(
+                        text = "清空",
+                        onClick = onClearExtraFiles,
+                        enabled = enabled,
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                }
+            }
+        }
+        if (status != null) {
+            val color = when (status.phase) {
+                PluginMarketUploadPhase.SUCCESS -> MiuixTheme.colorScheme.primary
+                PluginMarketUploadPhase.PENDING_REVIEW -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                PluginMarketUploadPhase.FAILED -> Color(0xFFD93025)
+                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+            }
+            Text(
+                text = status.message,
+                color = color,
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 6.dp)
+            )
+        }
+    }
+}
+
+private fun pluginMarketErrorMessage(error: Throwable): String {
+    if (error is PluginMarketException && error.errorCode == "UPLOADER_BLACKLISTED") {
+        return "当前微信账号已被禁止上传在线插件"
+    }
+    return error.message?.trim().takeUnless { it.isNullOrBlank() } ?: error.javaClass.simpleName
+}
+
+}
+
+private object PluginMarketHistoryUi {
+    @Composable
+    fun HistoryList(
+        versions: List<PluginMarketHistoryVersion>,
+        loading: Boolean,
+        error: String,
+        installingVersionId: String?,
+        enabled: Boolean,
+        onRetry: () -> Unit,
+        onInstall: (PluginMarketHistoryVersion) -> Unit
+    ) {
+        Text(
+            text = "历史版本",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 14.dp)
+        )
+        when {
+            loading -> EmptyText("正在加载历史版本...")
+            error.isNotBlank() -> {
+                EmptyText(error)
+                TextButton(
+                    text = "重新加载",
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+            }
+            versions.isEmpty() -> EmptyText("暂无历史版本")
+            else -> versions.forEachIndexed { index, version ->
+                if (index > 0) InsetDivider(start = 0.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = buildString {
+                                append(version.versionName.ifBlank { "未命名版本" })
+                                if (index == 0) append("（最新）")
+                            },
+                            color = MiuixTheme.colorScheme.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${formatPluginMarketTime(version.createdAt)} · ${formatBytes(version.totalSize)}",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "更新说明：${version.releaseNotes.ifBlank { "暂无更新说明" }}",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
+                    TextButton(
+                        text = if (installingVersionId == version.versionId) "读取中" else "安装",
+                        onClick = { onInstall(version) },
+                        enabled = enabled && installingVersionId == null,
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                }
+            }
+        }
+    }
+
+    private fun formatBytes(size: Long): String = when {
+        size >= 1024L * 1024L -> String.format(Locale.US, "%.1f MiB", size / (1024.0 * 1024.0))
+        size >= 1024L -> String.format(Locale.US, "%.1f KiB", size / 1024.0)
+        else -> "$size B"
+    }
+}
+
+private val pluginMarketBeijingTimeFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
+        .withZone(ZoneId.of("Asia/Shanghai"))
+
+private fun formatPluginMarketTime(value: String): String {
+    val source = value.trim()
+    if (source.isEmpty()) return "时间未知"
+    val instant = runCatching { Instant.parse(source) }
+        .recoverCatching { OffsetDateTime.parse(source, DateTimeFormatter.ISO_DATE_TIME).toInstant() }
+        .recoverCatching {
+            LocalDateTime.parse(source, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                .toInstant(ZoneOffset.UTC)
+        }
+        .getOrNull()
+        ?: return source
+    return pluginMarketBeijingTimeFormatter.format(instant)
 }
 
 /** WCX 入口：脚本 Tab 内容（Hchat 脚本页主体 + WCX 本地组件）。 */
