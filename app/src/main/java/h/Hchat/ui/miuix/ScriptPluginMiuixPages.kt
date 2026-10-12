@@ -631,7 +631,8 @@ fun ScriptPluginSettingsContent(
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit,
     onOpenMarket: () -> Unit,
     onOpenManager: () -> Unit,
-    onOpenDiagnostics: () -> Unit = {}
+    onOpenDiagnostics: () -> Unit = {},
+    onOpenFaq: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val sp = remember { HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME) }
@@ -677,6 +678,12 @@ fun ScriptPluginSettingsContent(
                 "脚本功能诊断",
                 if (apiReady) "运行时正常，可查看状态与日志" else "未就绪：${readinessDetail.ifBlank { "微信 API 未解析" }}",
             ) { onOpenDiagnostics() }
+        }
+        SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+            ActionRow(
+                "脚本常见问题",
+                "开关打不开 / 插件启用失败 / 改脚本要不要重启，看这里",
+            ) { onOpenFaq() }
         }
         SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
             PathSwitchRow(
@@ -5393,6 +5400,7 @@ fun ScriptPluginMiuixTabContent(
     onOpenMarket: () -> Unit = {},
     onOpenReadme: (ScriptPluginRuntime.ScriptPlugin) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onOpenFaq: () -> Unit = {},
 ) {
     ScriptPluginSettingsMiuixContent.ScriptPluginSettingsContent(
         context = context,
@@ -5400,6 +5408,7 @@ fun ScriptPluginMiuixTabContent(
         onOpenMarket = onOpenMarket,
         onOpenManager = onOpenManager,
         onOpenDiagnostics = onOpenDiagnostics,
+        onOpenFaq = onOpenFaq,
     )
 }
 

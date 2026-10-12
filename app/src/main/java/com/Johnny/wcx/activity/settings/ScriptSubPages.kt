@@ -260,3 +260,133 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
         .getOrDefault("未知")
     return rows
 }
+
+
+// ---------------------------------------------------------------------------
+// 脚本常见问题（FAQ）
+// ---------------------------------------------------------------------------
+
+private data class ScriptFaqEntry(val question: String, val answer: String)
+
+private val SCRIPT_FAQ_SECTIONS: List<Pair<String, List<ScriptFaqEntry>>> = listOf(
+    "一、插件总开关打不开" to listOf(
+        ScriptFaqEntry(
+            "点了没反应，或提示「微信联系人数据库尚未就绪」",
+            "先打开「脚本功能诊断」看「未就绪原因」这一行，再对症处理：\n" +
+                "· 显示「无（已就绪）」却仍开不了 → 重启微信后再试。\n" +
+                "· 「数据库对象就绪」为 ✗ 否，或「DexKit 解析：未初始化」→ 微信刚启动、DexKit 还没解析完，等几秒或重启微信。\n" +
+                "· 「微信数据库 API：未解析」→ 多为当前微信版本尚未适配，请把诊断页的「微信版本」一行反馈给开发者。"
+        ),
+        ScriptFaqEntry(
+            "怎么确认已经就绪了？",
+            "看「插件总开关：已开启」+「未就绪原因：无（已就绪）」两行同时成立即可。"
+        )
+    ),
+    "二、插件开启后马上被关掉" to listOf(
+        ScriptFaqEntry(
+            "提示「加载[XX]失败，已自动关闭」",
+            "这条 Toast 现在会带出真实原因（异常类型 + 说明）；「脚本功能诊断」里的「插件加载错误」一行也会显示最近一次失败的原因。\n" +
+                "常见情况：\n" +
+                "· 脚本本身与当前微信版本不兼容 / 脚本内部报错 → 把该行内容反馈给开发者。\n" +
+                "· 插件文件不完整或被人为改坏 → 删除后从「在线插件」重新安装一次。"
+        )
+    ),
+    "三、插件开了但没反应" to listOf(
+        ScriptFaqEntry(
+            "开关是开的，但功能不生效",
+            "按顺序确认：\n" +
+                "1. 「插件总开关」已开启（总开关关着时单个插件不会加载）。\n" +
+                "2. 该插件自己的开关已开启（「本地插件」列表里是打开状态）。\n" +
+                "3. 看「脚本功能诊断」的「脚本 Hook 注册数」，正常应大于 0。\n" +
+                "部分插件只在特定场景生效（例如收到消息、进入群聊），也可能需要重启微信后生效。"
+        )
+    ),
+    "四、改了脚本 / 新装了插件，要不要重启？" to listOf(
+        ScriptFaqEntry(
+            "脚本是实时加载、实时刷新的",
+            "不需要重启：\n" +
+                "· 修改插件目录里的 main.java → 约 0.5 秒后自动重新加载该插件。\n" +
+                "· 新增 / 删除插件目录、修改 info.prop → 「本地插件」列表会自动刷新。\n" +
+                "前提是该插件已被启用、且总开关为开启状态。"
+        )
+    ),
+    "五、在线插件市场打不开" to listOf(
+        ScriptFaqEntry(
+            "列表加载不出来 / 一直转圈",
+            "到「脚本功能诊断」页的「市场服务器」处切换服务器（官方 / 备用 / 自定义）。\n" +
+                "某个服务器暂时不可用时，切换后重试即可；自定义地址可填你自己部署的服务端。"
+        )
+    ),
+    "六、日志在哪里" to listOf(
+        ScriptFaqEntry(
+            "想自己看日志或反馈给开发者",
+            "· 脚本目录：/storage/emulated/0/Android/media/com.tencent.mm/WCX/脚本插件\n" +
+                "· 单个插件日志：上面目录下「插件文件夹 / log.txt」（含插件自身输出与加载失败原因）\n" +
+                "· 模块日志目录：/storage/emulated/0/Android/data/com.tencent.mm/WCX/logs\n" +
+                "· 也可以在「脚本功能诊断」页点「复制诊断信息」，一次性复制当前状态。"
+        )
+    )
+)
+
+/**
+ * 脚本常见问题页。
+ *
+ * 把「开关开不了 / 插件启用失败 / 改动后要不要重启」等高频问题的处理方式集中一处，
+ * 出问题时先看这里，再决定是否需要到「脚本功能诊断」取更多信息。
+ */
+@Composable
+fun ScriptFaqScreen(onBack: () -> Unit) {
+    val scrollBehavior = MiuixScrollBehavior()
+    PageScaffold(
+        title = "脚本常见问题",
+        largeTitle = "脚本常见问题",
+        scrollBehavior = scrollBehavior,
+        onBack = onBack,
+    ) { padding ->
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 84.dp,
+            ),
+        ) {
+            SCRIPT_FAQ_SECTIONS.forEach { (sectionTitle, entries) ->
+                item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = sectionTitle) }
+                item {
+                    SettingsCard {
+                        entries.forEachIndexed { index, entry ->
+                            if (index > 0) InsetDivider()
+                            FaqItem(entry.question, entry.answer)
+                        }
+                    }
+                }
+            }
+            item {
+                Text(
+                    text = "以上仍未解决时，请到「脚本功能诊断」页点「复制诊断信息」，把内容反馈给开发者。",
+                    fontSize = 12.sp,
+                    color = BasicComponentDefaults.summaryColor().color,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FaqItem(question: String, answer: String) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(
+            text = question,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = BasicComponentDefaults.titleColor().color,
+        )
+        Text(
+            text = answer,
+            fontSize = 12.sp,
+            color = BasicComponentDefaults.summaryColor().color,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
