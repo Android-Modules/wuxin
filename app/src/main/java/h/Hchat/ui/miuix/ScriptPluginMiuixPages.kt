@@ -144,6 +144,7 @@ import android.provider.OpenableColumns
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.RowScope
 
 
 private const val PRESS_RELEASE_DELAY_MS = 110L
@@ -2634,6 +2635,80 @@ internal fun BottomActionBar(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 底部双按钮操作栏（移植自 Hchat）。
+ * 与上面的单按钮版本并存：两者参数名不同，重载可区分。
+ */
+@Composable
+internal fun BottomActionBar(
+    primaryText: String,
+    onPrimaryClick: () -> Unit,
+    secondaryText: String? = null,
+    onSecondaryClick: (() -> Unit)? = null,
+    middleText: String? = null,
+    onMiddleClick: (() -> Unit)? = null
+) {
+    val backAction = when {
+        secondaryText == "取消" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "取消" && onMiddleClick != null -> onMiddleClick
+        primaryText == "取消" -> onPrimaryClick
+        secondaryText == "返回" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "返回" && onMiddleClick != null -> onMiddleClick
+        primaryText == "返回" -> onPrimaryClick
+        secondaryText == "关闭" && onSecondaryClick != null -> onSecondaryClick
+        middleText == "关闭" && onMiddleClick != null -> onMiddleClick
+        primaryText == "关闭" -> onPrimaryClick
+        else -> null
+    }
+    RegisterSettingsBackHandler(backAction)
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(MiuixTheme.colorScheme.background.copy(alpha = 0.92f))
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (secondaryText != null && onSecondaryClick != null) {
+            BottomBarButton(
+                text = secondaryText,
+                modifier = Modifier.weight(1f),
+                filled = false,
+                onClick = onSecondaryClick
+            )
+        }
+        if (middleText != null && onMiddleClick != null) {
+            BottomBarButton(
+                text = middleText,
+                modifier = Modifier.weight(1f),
+                filled = false,
+                onClick = onMiddleClick
+            )
+        }
+        BottomBarButton(
+            text = primaryText,
+            modifier = Modifier.weight(1f),
+            filled = true,
+            onClick = onPrimaryClick
+        )
+    }
+}
+
+/** 底部操作栏按钮（移植自 Hchat）。 */
+@Composable
+private fun BottomBarButton(text: String, modifier: Modifier, filled: Boolean, onClick: () -> Unit) {
+    val bg = if (filled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.secondaryVariant
+    val fg = if (filled) Color.White else MiuixTheme.colorScheme.onSecondaryVariant
+    Text(
+        modifier = modifier.clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+        text = text,
+        color = fg,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center
+    )
+}
+
 /** 搜索框。 */
 @Composable
 internal fun SearchBarSurface(
@@ -2651,33 +2726,53 @@ internal fun SearchBarSurface(
     )
 }
 
-/** 页面脚手架（顶栏 + 内容；不依赖 miuix 高级 API，避免版本差异）。 */
+/** 页面脚手架（顶栏 + 可选右上操作 + 可选底部操作栏 + 内容；不依赖 miuix 高级 API，避免版本差异）。 */
 @Composable
 internal fun PageScaffold(
     title: String,
     largeTitle: String,
     scrollBehavior: Any? = null,
     onBack: (() -> Unit)? = null,
-    @Suppress("UNUSED_PARAMETER") bottomBar: (@Composable () -> Unit)? = null,
+    topBarActions: @Composable RowScope.() -> Unit = {},
+    bottomBar: (@Composable () -> Unit)? = null,
     @Suppress("UNUSED_PARAMETER") largeTitleUnused: String = largeTitle,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    // 脚本管理/导入页是全屏 PageScaffold，顶栏需避开状态栏，否则「返回」会贴到状态栏。
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        BasicComponent(onClick = onBack) {
-            Text(
-                text = if (onBack != null) "← $title" else title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                fontWeight = FontWeight.Medium,
-                color = if (onBack != null) MiuixTheme.colorScheme.primary
-                else BasicComponentDefaults.titleColor().color,
-            )
+    // 脚本管理/导入/在线插件页均为全屏 PageScaffold，顶栏需避开状态栏，否则「返回」会贴到状态栏。
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    BasicComponent(onClick = onBack) {
+                        Text(
+                            text = if (onBack != null) "← $title" else title,
+                            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                            fontWeight = FontWeight.Medium,
+                            color = if (onBack != null) MiuixTheme.colorScheme.primary
+                            else BasicComponentDefaults.titleColor().color,
+                        )
+                    }
+                }
+                topBarActions()
+            }
+            content(PaddingValues(0.dp))
         }
-        content(PaddingValues(0.dp))
+        if (bottomBar != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+            ) {
+                bottomBar()
+            }
+        }
     }
 }
 
