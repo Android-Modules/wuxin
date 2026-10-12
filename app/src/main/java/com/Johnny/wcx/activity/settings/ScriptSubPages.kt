@@ -250,8 +250,6 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
     rows += "微信版本" to wechatVersion
     rows += "宿主进程" to runCatching { TargetProcesses.currentName }.getOrDefault("未知")
     rows += "模块版本" to "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
-    val lspApi = runCatching { WePrefs.getIntOrDef(Preferences.CACHED_LSP_API_VERSION, 0) }.getOrDefault(0)
-    rows += "LSPosed API" to if (lspApi > 0) "$lspApi" else "未知（尚未缓存）"
 
     // —— 存储与服务器 ——
     rows += "脚本目录" to runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
