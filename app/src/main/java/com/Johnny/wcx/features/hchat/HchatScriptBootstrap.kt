@@ -55,6 +55,14 @@ object HchatScriptBootstrap {
     @Volatile
     private var dexKitBridgeRef: DexKitBridge? = null
 
+    /** 诊断页用：重置引导状态并重新安装。 */
+    @Synchronized
+    fun retry() {
+        installed = false
+        status = "重新初始化中"
+        install()
+    }
+
     /**
      * 取 Xposed 的 LoadPackageParam。
      *
