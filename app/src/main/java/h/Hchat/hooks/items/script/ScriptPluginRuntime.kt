@@ -1607,6 +1607,7 @@ object ScriptPluginRuntime {
             // Async entry scripts can finish between initial detection and plugin registration.
             refreshCallbacks(plugin.id, interpreter)
             notifyPluginCatalogChanged()
+            appendPluginLoadOk(plugin)
         }.onFailure {
             pendingWaBridge?.dispose()
             loadedPlugins.remove(plugin.id)
@@ -2280,6 +2281,15 @@ object ScriptPluginRuntime {
             }
         }
         if (shouldLog) h.Hchat.utils.HLog.e("$TAG $message")
+    }
+
+    /** 加载成功时写一条 OK 标记：诊断页据此判断「最近一次加载」是成功还是失败。 */
+    private fun appendPluginLoadOk(plugin: ScriptPlugin) {
+        runCatching {
+            if (!plugin.dir.isDirectory) plugin.dir.mkdirs()
+            val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+            File(plugin.dir, "log.txt").appendText("[$time] OK 插件加载成功\n")
+        }
     }
 
     private fun writePluginLoadError(plugin: ScriptPlugin, throwable: Throwable) {
