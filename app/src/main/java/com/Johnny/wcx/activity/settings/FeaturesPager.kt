@@ -37,6 +37,14 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
+import androidx.compose.foundation.layout.Row
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.Johnny.wcx.constants.Preferences
+import top.yukonga.miuix.kmp.basic.Switch
 
 
 // ---------------------------------------------------------------------------
@@ -195,6 +203,23 @@ fun CategoryDetailScreen(categoryName: String, onBack: () -> Unit) {
         }
     }
 
+    val isSecretFriendCategory = categoryName == SwitchFeature.SECRET_FRIEND_CATEGORY
+    var masterEnabled by remember(categoryName) {
+        mutableStateOf(Preferences.secretFriendMasterEnabled)
+    }
+
+    // 总开关：切换后立即对该分类下所有开关生效（各功能自身开关状态保留）。
+    fun applyMasterSwitch(next: Boolean) {
+        masterEnabled = next
+        Preferences.secretFriendMasterEnabled = next
+        items.filterIsInstance<SwitchFeature>().forEach { feature ->
+            feature.isEnabled = next && WePrefs.getBoolOrFalse(feature.name)
+        }
+        switchStates.keys.forEach { key ->
+            switchStates[key] = next && WePrefs.getBoolOrFalse(key)
+        }
+    }
+
     MiuixListScaffold(
         title = categoryName,
         navigationIcon = {
@@ -208,6 +233,38 @@ fun CategoryDetailScreen(categoryName: String, onBack: () -> Unit) {
         },
     ) {
         if (items.isEmpty()) return@MiuixListScaffold
+
+        if (isSecretFriendCategory) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .groupedCardItem(0, 1),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "密友功能总开关",
+                                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                                fontWeight = FontWeight.Medium,
+                                color = MiuixTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "关闭后本分类下所有功能都不生效（各开关状态保留）",
+                                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                        Switch(checked = masterEnabled, onCheckedChange = ::applyMasterSwitch)
+                    }
+                }
+            }
+        }
 
         itemsIndexed(items, key = { _, item -> item.name }) { index, item ->
             Column(

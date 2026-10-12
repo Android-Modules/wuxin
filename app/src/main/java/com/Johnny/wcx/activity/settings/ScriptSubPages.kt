@@ -46,6 +46,12 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.Johnny.wcx.BuildConfig
+import com.Johnny.wcx.constants.Preferences
+import com.Johnny.wcx.preferences.WePrefs
+import h.Hchat.hooks.core.HookRegistry
+import h.Hchat.hooks.items.script.market.PluginMarketSettings
+import com.Johnny.wcx.utils.fs.KnownPaths
 
 /** 在线插件市场（Hchat 原版 UI），整页跳转。 */
 @Composable
@@ -166,27 +172,55 @@ private fun DiagnosticRow(label: String, value: String, warn: Boolean) {
 private fun collectScriptDiagnostics(context: Context): List<Pair<String, String>> {
     val rows = mutableListOf<Pair<String, String>>()
 
+    // —— 总开关与插件 ——
     val enabled = runCatching {
         HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
             .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
     }.getOrDefault(false)
     rows += "插件总开关" to if (enabled) "已开启" else "已关闭"
 
+    val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
+    val enabledPlugins = plugins.count {
+        runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+    }
+    rows += "已安装插件" to "${plugins.size} 个（已启用 $enabledPlugins 个）"
+
+    // —— 微信公共 API（脚本运行的前提）——
     val database = runCatching { WeChatApis.database() }.getOrNull()
     val account = runCatching { WeChatApis.account() }.getOrNull()
-    rows += "微信数据库 API" to if (database != null) "已解析" else "✗ 未解析（DexKit 未完成/未适配）"
-    rows += "微信账号 API" to if (account != null) "已解析" else "✗ 未解析（DexKit 未完成/未适配）"
+    val contacts = runCatching { WeChatApis.contacts() }.getOrNull()
+    rows += "微信数据库 API" to if (database != null) "已解析" else "✗ 未解析（DexKit 未完成或未适配）"
+    rows += "微信账号 API" to if (account != null) "已解析" else "✗ 未解析（DexKit 未完成或未适配）"
+    rows += "微信联系人 API" to if (contacts != null) "已解析" else "✗ 未解析（DexKit 未完成或未适配）"
 
-    rows += "引导链路" to runCatching { HchatScriptBootstrap.status }.getOrDefault("未知")
-    rows += "未就绪原因" to runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }
-        .getOrNull().orEmpty().ifBlank { "无（已就绪）" }
+    // —— 引导链路 ——
+    val bootstrapStatus = runCatching { HchatScriptBootstrap.status }.getOrDefault("未知")
+    rows += "引导链路" to bootstrapStatus
+    rows += "未就绪原因" to when {
+        bootstrapStatus.startsWith("引导异常") -> bootstrapStatus
+        database == null -> "微信数据库 API 未解析（DexKit 预热未完成或解析失败）"
+        contacts == null -> "微信联系人 API 未解析（DexKit 预热未完成或解析失败）"
+        account == null -> "微信账号 API 未解析（DexKit 预热未完成或解析失败）"
+        else -> "无（已就绪）"
+    }
+    rows += "脚本 Hook 注册数" to runCatching { "${HookRegistry.get().size()} 个" }
+        .getOrDefault("读取失败")
 
-    val pluginCount = runCatching { ScriptPluginRuntime.listPlugins(context).size }.getOrDefault(-1)
-    rows += "已安装插件" to if (pluginCount >= 0) "$pluginCount 个" else "读取失败"
-    rows += "插件目录" to runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
+    // —— 环境 ——
+    val wechatVersion = runCatching { WeChatApis.version()?.current()?.displayVersion() }
+        .getOrNull()?.takeIf { it.isNotBlank() } ?: "未知"
+    rows += "微信版本" to wechatVersion
+    rows += "宿主进程" to runCatching { TargetProcesses.currentName }.getOrDefault("未知")
+    rows += "模块版本" to "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
+    val lspApi = runCatching { WePrefs.getIntOrDef(Preferences.CACHED_LSP_API_VERSION, 0) }.getOrDefault(0)
+    rows += "LSPosed API" to if (lspApi > 0) "$lspApi" else "未知（尚未缓存）"
+
+    // —— 存储与服务器 ——
+    rows += "脚本目录" to runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
         .getOrDefault("未知")
-
-    rows += "宿主" to "${HostInfo.packageName} ${HostInfo.versionName}(${HostInfo.versionCode})"
-    rows += "进程" to TargetProcesses.currentName
+    rows += "日志目录" to runCatching { KnownPaths.moduleData.resolve("logs").toString() }
+        .getOrDefault("未知")
+    rows += "市场服务器" to runCatching { PluginMarketSettings.serviceUrl(context) }
+        .getOrDefault("未知")
     return rows
 }

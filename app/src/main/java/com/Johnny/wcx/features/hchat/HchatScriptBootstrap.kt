@@ -1,6 +1,5 @@
 package com.Johnny.wcx.features.hchat
 
-import com.Johnny.wcx.loader.entry.xp51.Xp51HookEntry
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.reflection.ClassLoaders
@@ -14,7 +13,6 @@ import h.Hchat.hooks.items.script.ScriptPluginFeature
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.preferences.ConfigStore
 import h.Hchat.ui.UIRegistry
-import de.robv.android.xposed.callbacks.XC_LoadPackage
 import org.luckypray.dexkit.DexKitBridge
 
 /**
@@ -62,30 +60,6 @@ object HchatScriptBootstrap {
         install()
     }
 
-    /**
-     * 取 Xposed 的 LoadPackageParam。
-     *
-     * legacy（xp51）入口会把它存在 [Xp51HookEntry] 的静态字段里；
-     * standard flavor 走 libxposed（lsp10x）入口，**不会**产生这个对象，直接取会抛
-     * 「LoadPackageParam is null」，导致整条脚本引导链路中断（微信 API 永远不解析）。
-     *
-     * 说明：h/Hchat 全仓库没有任何地方真正读取该对象（FeatureContext.loadPackageParam()
-     * 无调用者），它只是构造 FeatureContext 的形式参数，因此这里按宿主信息合成一个即可。
-     */
-    private fun resolveLoadPackageParam(): XC_LoadPackage.LoadPackageParam {
-        runCatching { Xp51HookEntry.getLoadPackageParam() }.getOrNull()?.let { return it }
-        // 构造器是 package-private，只能反射创建；只填仓库中已证实的公有字段
-        // （packageName / classLoader / appInfo —— 见 Xp51HookEntry.handleLoadPackage 的用法）。
-        val param = XC_LoadPackage.LoadPackageParam::class.java
-            .getDeclaredConstructor()
-            .apply { isAccessible = true }
-            .newInstance()
-        param.packageName = HostInfo.packageName
-        param.classLoader = ClassLoaders.HOST
-        param.appInfo = HostInfo.appInfo
-        return param
-    }
-
     @Synchronized
     fun install() {
         if (installed) return
@@ -95,7 +69,6 @@ object HchatScriptBootstrap {
         runCatching {
             val hostContext = HostInfo.application
             val hostClassLoader = ClassLoaders.HOST
-            val lpparam = resolveLoadPackageParam()
 
             val dexKitBridge = DexKitBridge.create(HostInfo.appInfo.sourceDir)
             dexKitBridgeRef = dexKitBridge
@@ -106,7 +79,7 @@ object HchatScriptBootstrap {
                 dexKitBridge,
                 dexFinder,
                 hostClassLoader,
-                lpparam.appInfo.sourceDir
+                HostInfo.appInfo.sourceDir
             )
 
             // moduleContext：Hchat 原本通过 createPackageContext(模块包名) 获取，用于读取模块资源。
@@ -115,7 +88,7 @@ object HchatScriptBootstrap {
                 hostContext,
                 hostContext,
                 hostClassLoader,
-                lpparam,
+                null,
                 dexKitBridge,
                 dexFinder,
                 EventBus.get(),
