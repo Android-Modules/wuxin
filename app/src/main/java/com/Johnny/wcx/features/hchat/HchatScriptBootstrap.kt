@@ -2,7 +2,6 @@ package com.Johnny.wcx.features.hchat
 
 import com.Johnny.wcx.loader.entry.xp51.Xp51HookEntry
 import com.Johnny.wcx.utils.HostInfo
-import com.Johnny.wcx.utils.TargetProcesses
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.reflection.ClassLoaders
 import h.Hchat.dexkit.DexBridgeHolder
@@ -75,13 +74,16 @@ object HchatScriptBootstrap {
      */
     private fun resolveLoadPackageParam(): XC_LoadPackage.LoadPackageParam {
         runCatching { Xp51HookEntry.getLoadPackageParam() }.getOrNull()?.let { return it }
-        return XC_LoadPackage.LoadPackageParam().apply {
-            packageName = HostInfo.packageName
-            processName = TargetProcesses.currentName
-            classLoader = ClassLoaders.HOST
-            appInfo = HostInfo.appInfo
-            isFirstApplication = true
-        }
+        // 构造器是 package-private，只能反射创建；只填仓库中已证实的公有字段
+        // （packageName / classLoader / appInfo —— 见 Xp51HookEntry.handleLoadPackage 的用法）。
+        val param = XC_LoadPackage.LoadPackageParam::class.java
+            .getDeclaredConstructor()
+            .apply { isAccessible = true }
+            .newInstance()
+        param.packageName = HostInfo.packageName
+        param.classLoader = ClassLoaders.HOST
+        param.appInfo = HostInfo.appInfo
+        return param
     }
 
     @Synchronized
