@@ -145,6 +145,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.RowScope
+import top.yukonga.miuix.kmp.basic.Card
+import com.Johnny.wcx.features.hchat.HchatScriptBootstrap
 
 
 private const val PRESS_RELEASE_DELAY_MS = 110L
@@ -656,6 +658,37 @@ fun ScriptPluginSettingsContent(
     }
 
     Column {
+        // 脚本运行时依赖微信公共 API（数据库/账号），未就绪时把根因直接显示出来，便于定位。
+        val apiReady = runCatching { WeChatApis.database() }.getOrNull() != null
+        if (!apiReady) {
+            SettingsCard(modifier = Modifier.padding(top = 10.dp)) {
+                Text(
+                    text = "脚本运行时未就绪",
+                    color = Color(0xFFD93025),
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                Text(
+                    text = "引导：" + HchatScriptBootstrap.status,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+                Text(
+                    text = "原因：" + runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }
+                        .getOrElse { it.message ?: "未知" }.orEmpty().ifBlank { "已就绪" },
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+                Text(
+                    text = "请把这几行截图反馈，即可定位 DexKit/版本适配问题。",
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+        }
         SettingsCard {
             PathSwitchRow(
                 globalEnabled,
@@ -1026,7 +1059,6 @@ fun ScriptPluginManagerPage(
         largeTitle = "本地插件管理",
         scrollBehavior = scrollBehavior,
         onBack = onBack,
-        bottomBar = { BottomActionBar("返回", onBack) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -2551,36 +2583,53 @@ private fun openMarkdownLink(context: Context, url: String) {
 // ---------------------------------------------------------------------------
 
 
-/** 卡片容器。 */
+/** 卡片容器（圆角卡片，视觉对齐 Hchat）。 */
 @Composable
 internal fun SettingsCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    BasicComponent(modifier = modifier.fillMaxWidth(), onClick = null) {
+    Card(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        cornerRadius = 18.dp,
+    ) {
         Column { content() }
     }
 }
 
-/** 可点击的条目行（标题 + 摘要）。 */
+/** 可点击的条目行（标题 + 摘要 + 右侧 ›；圆角按压反馈，对齐 Hchat）。 */
 @Composable
 internal fun ActionRow(title: String, summary: String, onClick: () -> Unit) {
-    BasicComponent(onClick = onClick) {
-        Column {
+    var pressed by remember { mutableStateOf(false) }
+    val pressFeedbackColor = rememberPressFeedbackColor(pressed)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(pressFeedbackColor)
+            .responsiveTap(onClick = onClick, onPressedChange = { pressed = it })
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                color = MiuixTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
-                color = BasicComponentDefaults.titleColor().color,
             )
             if (summary.isNotBlank()) {
                 Text(
                     text = summary,
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = BasicComponentDefaults.summaryColor().color,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
                 )
             }
         }
+        Text(
+            text = "›",
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            fontSize = 22.sp,
+        )
     }
 }
 
@@ -3475,17 +3524,14 @@ fun ScriptPluginMarketPage(
         largeTitle = "在线插件",
         scrollBehavior = scrollBehavior,
         topBarActions = {
+            TextButton(
+                text = "上传本地插件",
+                onClick = { showUploadDialog = true },
+                colors = ButtonDefaults.textButtonColorsPrimary()
+            )
             PluginMarketNotificationBell(
                 unreadCount = notificationUnreadCount,
                 onClick = ::openNotifications
-            )
-        },
-        bottomBar = {
-            BottomActionBar(
-                primaryText = "上传本地插件",
-                onPrimaryClick = { showUploadDialog = true },
-                secondaryText = "返回",
-                onSecondaryClick = onBack
             )
         }
     ) { padding ->
