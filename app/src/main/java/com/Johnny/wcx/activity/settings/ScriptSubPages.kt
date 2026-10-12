@@ -81,6 +81,172 @@ fun ScriptManagerScreen(onBack: () -> Unit) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 脚本自检 / 一键修复
+// ---------------------------------------------------------------------------
+
+private data class ScriptSelfCheckItem(
+    val name: String,
+    val ok: Boolean,
+    val detail: String,
+    val fixable: Boolean,
+)
+
+/** 逐项检查脚本运行环境，返回每一项结果（ok=false 即问题项）。 */
+private fun runScriptSelfCheck(context: Context): List<ScriptSelfCheckItem> {
+    val items = mutableListOf<ScriptSelfCheckItem>()
+
+    val scriptDir = runCatching { ScriptPluginRuntime.scriptDir(context) }.getOrNull()
+    val dirOk = scriptDir != null && scriptDir.isDirectory
+    items += ScriptSelfCheckItem(
+        "脚本目录",
+        dirOk,
+        scriptDir?.absolutePath ?: "无法获取脚本目录",
+        fixable = !dirOk,
+    )
+
+    val masterOn = runCatching {
+        HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
+            .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
+    }.getOrDefault(false)
+    items += ScriptSelfCheckItem(
+        "插件总开关",
+        masterOn,
+        if (masterOn) "已开启" else "未开启：插件不会被加载",
+        fixable = !masterOn,
+    )
+
+    val database = runCatching { WeChatApis.database() }.getOrNull()
+    items += ScriptSelfCheckItem(
+        "微信数据库 API",
+        database != null,
+        if (database != null) "已解析" else "未解析：DexKit 预热未完成或当前微信版本未适配",
+        fixable = database == null,
+    )
+
+    val readiness = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }.getOrNull()
+    items += ScriptSelfCheckItem(
+        "脚本运行时就绪",
+        readiness == null,
+        readiness ?: "已就绪",
+        fixable = readiness != null,
+    )
+
+    val dexInfo = runCatching { HchatScriptBootstrap.dexParseInfo() }.getOrDefault("")
+    val dexOk = dexInfo.isNotBlank() && !dexInfo.contains("未初始化")
+    items += ScriptSelfCheckItem(
+        "DexKit 解析",
+        dexOk,
+        dexInfo.ifBlank { "无信息" },
+        fixable = !dexOk,
+    )
+
+    val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
+    val enabledCount = plugins.count {
+        runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+    }
+    val noEnabled = plugins.isNotEmpty() && enabledCount == 0
+    items += ScriptSelfCheckItem(
+        "本地插件",
+        !noEnabled,
+        when {
+            plugins.isEmpty() -> "尚未安装任何插件"
+            noEnabled -> "已安装 " + plugins.size + " 个，但一个都没有启用"
+            else -> "已安装 " + plugins.size + " 个，已启用 " + enabledCount + " 个"
+        },
+        fixable = false,
+    )
+
+    val server = runCatching { PluginMarketSettings.serviceUrl(context) }.getOrNull().orEmpty()
+    items += ScriptSelfCheckItem(
+        "市场服务器地址",
+        server.isNotBlank(),
+        server.ifBlank { "为空：在线插件市场不可用" },
+        fixable = false,
+    )
+
+    return items
+}
+
+/** 一键修复可自动处理的问题，返回逐条执行结果。 */
+private fun runScriptSelfRepair(context: Context): List<String> {
+    val log = mutableListOf<String>()
+
+    runCatching {
+        val dir = ScriptPluginRuntime.scriptDir(context)
+        if (!dir.isDirectory) {
+            val created = dir.mkdirs() || dir.isDirectory
+            log += if (created) {
+                "已创建脚本目录：" + dir.absolutePath
+            } else {
+                "创建脚本目录失败：" + dir.absolutePath
+            }
+        }
+    }.onFailure { log += "创建脚本目录失败：" + it.message.orEmpty() }
+
+    val masterOn = runCatching {
+        HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
+            .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
+    }.getOrDefault(false)
+    if (!masterOn) {
+        runCatching { ScriptPluginRuntime.setGlobalEnabled(context, true) }.fold(
+            onSuccess = { log += "已开启插件总开关" },
+            onFailure = { log += "开启插件总开关失败：" + it.message.orEmpty() },
+        )
+    }
+
+    val readiness = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }.getOrNull()
+    val dexInfo = runCatching { HchatScriptBootstrap.dexParseInfo() }.getOrDefault("")
+    if (readiness != null || dexInfo.contains("未初始化")) {
+        runCatching { HchatScriptBootstrap.retry() }.fold(
+            onSuccess = { log += "已重新初始化脚本子系统（引导链路重跑）" },
+            onFailure = { log += "重新初始化失败：" + it.message.orEmpty() },
+        )
+    }
+
+    val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
+    val enabled = plugins.filter {
+        runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+    }
+    if (enabled.isNotEmpty()) {
+        var reloaded = 0
+        for (plugin in enabled) {
+            runCatching { ScriptPluginRuntime.reloadPluginAsync(context, plugin.id) }
+                .onSuccess { reloaded++ }
+        }
+        log += "已触发重新加载：" + reloaded + "/" + enabled.size + " 个已启用插件"
+    }
+
+    if (log.isEmpty()) log += "没有需要自动修复的项目。"
+    return log
+}
+
+private fun showScriptInfoDialog(context: Context, title: String, message: String) {
+    runCatching {
+        android.app.AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("知道了", null)
+            .show()
+    }
+}
+
+private fun showScriptFixDialog(
+    context: Context,
+    title: String,
+    message: String,
+    onFix: () -> Unit,
+) {
+    runCatching {
+        android.app.AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("一键修复") { _, _ -> onFix() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+}
+
 /**
  * 脚本功能诊断页。
  *
@@ -133,6 +299,55 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                         clipboard?.setPrimaryClip(ClipData.newPlainText("WCX 脚本诊断", text))
                         showToast("诊断信息已复制")
+                    }
+                    InsetDivider()
+                    ActionRow("一键自检", "逐项检查脚本运行环境，列出发现的问题") {
+                        val items = runCatching { runScriptSelfCheck(context) }.getOrNull()
+                        if (items == null) {
+                            showScriptInfoDialog(context, "脚本自检", "自检执行失败，请重试。")
+                        } else {
+                            val bad = items.filter { !it.ok }
+                            if (bad.isEmpty()) {
+                                showScriptInfoDialog(
+                                    context,
+                                    "脚本自检",
+                                    "全部通过（共检查 " + items.size + " 项）。",
+                                )
+                            } else {
+                                val fixable = bad.count { it.fixable }
+                                val message = StringBuilder()
+                                message.append("发现 ").append(bad.size).append(" 个问题：\n\n")
+                                bad.forEach { item ->
+                                    message.append("· ").append(item.name).append("：").append(item.detail)
+                                    if (item.fixable) {
+                                        message.append("（可自动修复）")
+                                    } else {
+                                        message.append("（需人工处理）")
+                                    }
+                                    message.append("\n")
+                                }
+                                if (fixable > 0) {
+                                    showScriptFixDialog(
+                                        context,
+                                        "脚本自检",
+                                        message.toString() + "\n是否立即修复可自动处理的 " + fixable + " 项？",
+                                    ) {
+                                        val log = runCatching { runScriptSelfRepair(context) }
+                                            .getOrDefault(emptyList())
+                                        refreshVersion++
+                                        showScriptInfoDialog(context, "修复结果", log.joinToString("\n"))
+                                    }
+                                } else {
+                                    showScriptInfoDialog(context, "脚本自检", message.toString())
+                                }
+                            }
+                        }
+                    }
+                    InsetDivider()
+                    ActionRow("一键修复", "补建目录 / 开启总开关 / 重跑引导链路 / 重新加载已启用插件") {
+                        val log = runCatching { runScriptSelfRepair(context) }.getOrDefault(emptyList())
+                        refreshVersion++
+                        showScriptInfoDialog(context, "修复结果", log.joinToString("\n"))
                     }
                 }
             }
