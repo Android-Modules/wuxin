@@ -140,6 +140,7 @@ import h.Hchat.hooks.api.core.WeChatApis
 import top.yukonga.miuix.kmp.menu.WindowDropdownMenu
 import java.time.ZoneId
 import java.time.ZoneOffset
+import android.provider.OpenableColumns
 
 
 private const val PRESS_RELEASE_DELAY_MS = 110L
@@ -2645,6 +2646,60 @@ internal fun SearchBarSurface(
         singleLine = true,
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/** 页面脚手架（顶栏 + 内容；不依赖 miuix 高级 API，避免版本差异）。 */
+@Composable
+internal fun PageScaffold(
+    title: String,
+    largeTitle: String,
+    scrollBehavior: Any? = null,
+    onBack: (() -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") bottomBar: (@Composable () -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") largeTitleUnused: String = largeTitle,
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    // 脚本管理/导入页是全屏 PageScaffold，顶栏需避开状态栏，否则「返回」会贴到状态栏。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        BasicComponent(onClick = onBack) {
+            Text(
+                text = if (onBack != null) "← $title" else title,
+                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                fontWeight = FontWeight.Medium,
+                color = if (onBack != null) MiuixTheme.colorScheme.primary
+                else BasicComponentDefaults.titleColor().color,
+            )
+        }
+        content(PaddingValues(0.dp))
+    }
+}
+
+/** 读取文件选择器返回 Uri 的显示名（移植自 Hchat MiuixSettingsPage）。 */
+private fun queryDisplayName(context: Context, uri: Uri?): String? {
+    if (uri == null) return null
+    if ("content".equals(uri.scheme, ignoreCase = true)) {
+        try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index >= 0) {
+                            return cursor.getString(index)?.takeIf { it.isNotBlank() }
+                        }
+                    }
+                }
+        } catch (_: Throwable) {
+        }
+    }
+    return uri.lastPathSegment
+        ?.let { Uri.decode(it) }
+        ?.substringAfterLast('/')
+        ?.substringAfterLast(':')
+        ?.takeIf { it.isNotBlank() }
 }
 
 // ---------------------------------------------------------------------------
