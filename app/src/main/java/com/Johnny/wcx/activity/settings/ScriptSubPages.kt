@@ -38,6 +38,7 @@ import h.Hchat.ui.miuix.ActionRow
 import h.Hchat.ui.miuix.InsetDivider
 import h.Hchat.ui.miuix.PageScaffold
 import h.Hchat.ui.miuix.PluginMarketUi
+import h.Hchat.ui.miuix.MarketServerSettingCard
 import h.Hchat.ui.miuix.ScriptPluginManagerTabPage
 import h.Hchat.ui.miuix.SettingsCard
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
@@ -114,6 +115,8 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+            item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "市场服务器") }
+            item { MarketServerSettingCard(context) }
             item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "操作") }
             item {
                 SettingsCard {
@@ -228,8 +231,6 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
     rows += "脚本目录" to runCatching { ScriptPluginRuntime.scriptDir(context).absolutePath }
         .getOrDefault("未知")
     rows += "日志目录" to runCatching { KnownPaths.moduleData.resolve("logs").toString() }
-        .getOrDefault("未知")
-    rows += "市场服务器" to runCatching { PluginMarketSettings.serviceUrl(context) }
         .getOrDefault("未知")
     return rows
 }
