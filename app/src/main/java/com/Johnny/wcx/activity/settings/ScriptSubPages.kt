@@ -225,9 +225,11 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
                 if (!logFile.isFile) {
                     null
                 } else {
-                    val lines = logFile.readLines().takeLast(80)
+                    val lines = logFile.readLines().takeLast(120)
                     val index = lines.indexOfLast { it.contains("ERROR") }
-                    if (index < 0) {
+                    // log.txt 是追加写的：只有当最后一次「加载失败」晚于最后一次「加载成功」时才算当前错误。
+                    val okIndex = lines.indexOfLast { it.contains("插件加载成功") }
+                    if (index < 0 || index < okIndex) {
                         null
                     } else {
                         val head = lines[index].substringAfter("ERROR", lines[index]).trim()
