@@ -83,7 +83,7 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var refreshVersion by remember { mutableStateOf(0) }
     val rows = remember(refreshVersion) { collectScriptDiagnostics(context) }
-    val scrollBehavior = remember { MiuixScrollBehavior() }
+    val scrollBehavior = MiuixScrollBehavior()
 
     PageScaffold(
         title = "脚本功能诊断",
