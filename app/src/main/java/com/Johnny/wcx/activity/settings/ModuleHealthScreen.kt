@@ -422,7 +422,7 @@ private fun scriptRuntime(context: Context): List<HealthItem> {
         else "插件总开关未开启，所有脚本插件都不会工作。可在「脚本」页打开，或点「一键修复」。",
     )
 
-    val hookCount = runCatching { HookRegistry.get().size }.getOrDefault(0)
+    val hookCount = runCatching { HookRegistry.get().size() }.getOrDefault(0)
     out += HealthItem(
         "脚本 Hook 注册", section,
         "$hookCount 个", hookCount > 0,
