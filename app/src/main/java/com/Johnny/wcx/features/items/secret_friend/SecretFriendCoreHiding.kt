@@ -52,6 +52,9 @@ object HideConversations : SwitchFeature(), IResolveDex,
     WeDatabaseListenerApi.IInsertListener,
     WeDatabaseListenerApi.IUpdateListener {
 
+    /** 密友隐藏面：默认随主控生效（未单独设置过的用户默认开启，可在列表中单独关闭）。 */
+    override val defaultEnabled: Boolean = true
+
     private const val TAG = "HideConversations"
 
     /**
@@ -339,6 +342,9 @@ object HideConversations : SwitchFeature(), IResolveDex,
 )
 object HideSecretContacts : SwitchFeature(), IResolveDex, WeDatabaseListenerApi.IQueryListener {
 
+    /** 密友隐藏面：默认随主控生效（未单独设置过的用户默认开启，可在列表中单独关闭）。 */
+    override val defaultEnabled: Boolean = true
+
     private const val TAG = "HideSecretContacts"
 
     /**
@@ -384,6 +390,9 @@ object HideSecretContacts : SwitchFeature(), IResolveDex, WeDatabaseListenerApi.
     description = "通讯录标签成员列表与朋友圈「谁可以看」选择器中不再出现密友"
 )
 object HideTagMembers : SwitchFeature(), IResolveDex, WeDatabaseListenerApi.IQueryListener {
+
+    /** 密友隐藏面：默认随主控生效（未单独设置过的用户默认开启，可在列表中单独关闭）。 */
+    override val defaultEnabled: Boolean = true
 
     private const val TAG = "HideTagMembers"
 
@@ -431,6 +440,9 @@ object HideTagMembers : SwitchFeature(), IResolveDex, WeDatabaseListenerApi.IQue
 )
 object BlockChat : SwitchFeature() {
 
+    /** 密友隐藏面：默认随主控生效（未单独设置过的用户默认开启，可在列表中单独关闭）。 */
+    override val defaultEnabled: Boolean = true
+
     private const val TAG = "BlockChat"
 
     override fun onEnable() {
@@ -475,6 +487,9 @@ object BlockChat : SwitchFeature() {
     description = "点开密友的资料页立即退出；临时解除隐藏期间可正常查看"
 )
 object BlockProfile : SwitchFeature() {
+
+    /** 密友隐藏面：默认随主控生效（未单独设置过的用户默认开启，可在列表中单独关闭）。 */
+    override val defaultEnabled: Boolean = true
 
     private const val TAG = "BlockProfile"
 
