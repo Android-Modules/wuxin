@@ -39,6 +39,7 @@ import com.Johnny.wcx.features.items.secret_friend.HideConversations
 import com.Johnny.wcx.features.items.secret_friend.SecretFriendDiagnostics
 import com.Johnny.wcx.features.items.secret_friend.SecretFriendState
 import com.Johnny.wcx.utils.android.showToast
+import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.ui.miuix.ActionRow
 import h.Hchat.ui.miuix.InsetDivider
 import h.Hchat.ui.miuix.PageScaffold
@@ -291,6 +292,17 @@ private fun secretFriendRepairSteps(): List<DiagStep> = listOf(
             SecretFriendDiagnostics.DiagRow(
                 "刷新会话列表", "修复", if (ok) "成功" else "失败", ok,
                 "重新加载微信会话列表，让隐藏/恢复立即生效。",
+            )
+        )
+    },
+    DiagStep("重排 Hook 安装任务") {
+        DexInstallScheduler.ensureWarmupReady()
+        DexInstallScheduler.retryAllPending()
+        listOf(
+            SecretFriendDiagnostics.DiagRow(
+                "Hook 安装任务", "修复",
+                "阶段=" + DexInstallScheduler.readyLevelName() + "，待装 " + DexInstallScheduler.pendingCount() + " 个", true,
+                "强制推进到 WARMUP 并重排全部 Hook 安装任务（密友隐藏面依赖的 DexKit 钩子）。",
             )
         )
     },

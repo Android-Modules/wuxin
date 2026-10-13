@@ -107,6 +107,8 @@ object SecretFriendDiagnostics : ClickableFeature() {
         rows += probeClass("通讯录 AddressLiveList", ADDRESS_LIVE_LIST)
         rows += probeClass("wcdb SQLiteDatabase", WCDB_DB)
         rows += probeClass("wcdb compat SQLiteDatabase", WCDB_DB_COMPAT)
+        rows += probeClass("朋友圈评论 SnsCommentFooter", SNS_COMMENT_FOOTER)
+        rows += probeClass("主界面 LauncherUI", LAUNCHER_UI)
         rows += probeMethod("ChattingUI.onCreate", CHATTING_UI, "onCreate")
         rows += probeMethod("ContactInfoUI.onCreate", CONTACT_INFO_UI, "onCreate")
 
@@ -160,5 +162,7 @@ object SecretFriendDiagnostics : ClickableFeature() {
     private const val CONTACT_INFO_UI = "com.tencent.mm.plugin.profile.ui.ContactInfoUI"
     private const val ADDRESS_LIVE_LIST = "com.tencent.mm.ui.contact.address.AddressLiveList"
     private const val WCDB_DB = "com.tencent.wcdb.database.SQLiteDatabase"
+    private const val SNS_COMMENT_FOOTER = "com.tencent.mm.plugin.sns.ui.SnsCommentFooter"
+    private const val LAUNCHER_UI = "com.tencent.mm.ui.LauncherUI"
     private const val WCDB_DB_COMPAT = "com.tencent.wcdb.compat.SQLiteDatabase"
 }
