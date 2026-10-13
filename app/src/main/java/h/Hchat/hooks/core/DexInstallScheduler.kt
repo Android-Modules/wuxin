@@ -82,7 +82,30 @@ object DexInstallScheduler {
             if (current >= stage.level) break
             if (readyLevel.compareAndSet(current, stage.level)) break
         }
+        resetExhaustedRetries()
         runReadyStates()
+    }
+
+    /**
+     * 把此前「重试耗尽、尚未安装」的任务计数归零并重新排队，让失败任务有机会恢复。
+     *
+     * 供「脚本一键修复 / 重新初始化」等入口调用；阶段推进（[advanceReady]）内部也会自动调用一次。
+     */
+    @JvmStatic
+    fun retryPending() = synchronized(stateLock) {
+        resetExhaustedRetries()
+        runReadyStates()
+    }
+
+    /** 阶段推进与一键修复共用的恢复点：重试次数已达上限、但仍未安装且保留 installer 的任务，计数归零。 */
+    private fun resetExhaustedRetries() = synchronized(stateLock) {
+        states.values.forEach { state ->
+            if (!state.installed.get() && state.installer != null &&
+                state.retryIndex.get() >= MAX_RETRY_ATTEMPTS
+            ) {
+                state.retryIndex.set(0)
+            }
+        }
     }
 
     fun markInstalled(key: String) = synchronized(stateLock) {
@@ -182,9 +205,10 @@ object DexInstallScheduler {
         if (!state.retryScheduled.compareAndSet(false, true)) return
         val index = state.retryIndex.getAndIncrement()
         if (index >= MAX_RETRY_ATTEMPTS) {
+            // 不永久放弃：保留 installer，仅暂停本轮；阶段推进 / retryPending() 会重置计数后再试，
+            // 避免「一次性失败后永久卡死」（微信启动早期 DexKit 尚未就绪时尤其明显）。
             state.retryScheduled.set(false)
-            state.installer = null
-            HLog.e("$TAG ${state.label} 多次安装失败，停止本轮重试")
+            HLog.e("$TAG ${state.label} 重试 $index 次仍未成功，暂停本轮重试（阶段推进 / 一键修复可再恢复）")
             return
         }
         val retry = Runnable {
