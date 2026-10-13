@@ -10,14 +10,15 @@ import com.Johnny.wcx.utils.WeLogger
  * 密友功能诊断：把「哪一层没隐藏掉」变成可见信息。
  *
  * 密友由 ~25 个独立开关组成（会话 / 通讯录 / 搜索 / 聊天 / 资料 / 朋友圈 / 外围界面…），
- * 任一开关关闭或某个 DexKit 锚点在当前微信版本上失配，该面就会静默失效——用户只看到
- * 「还能搜到 / 还能点进去」，却无从判断是哪一层。本页集中展示总开关、名单、临时解除，
- * 以及每个隐藏面的开关状态，并给出「名单为空 / 临时解除」两类最常见的「整体失效」提示。
+ * 任一开关关闭，或某个依赖的类/方法在当前微信版本上失配，该面就会静默失效——用户只看到
+ * 「还能搜到 / 还能点进去」，却无从判断是哪一层。本页集中展示总开关、名单、临时解除、
+ * 每个隐藏面的开关状态，以及**关键锚点是否解析成功**（类/方法是否存在），
+ * 据此可直接判断是「开关没开」还是「当前微信版本锚点漂移」。
  */
 @Feature(
     name = "密友功能诊断",
     categories = ["密友功能"],
-    description = "查看密友各隐藏面的实际生效状态：总开关、名单人数、临时解除，以及每个面是开还是关——哪一层没隐藏掉一眼可见"
+    description = "查看密友各隐藏面的实际生效状态：总开关、名单人数、临时解除、每个面的开关，以及关键锚点是否解析成功"
 )
 object SecretFriendDiagnostics : ClickableFeature() {
 
@@ -74,11 +75,23 @@ object SecretFriendDiagnostics : ClickableFeature() {
         appendFace(sb, "免打扰（密友消息静音）", MuteSecretFriend.isEnabled)
         sb.append('\n')
 
+        // ── 关键锚点自检 ──
+        sb.append("【关键锚点自检】\n")
+        appendClass(sb, "聊天页 ChattingUI", CHATTING_UI)
+        appendClass(sb, "资料页 ContactInfoUI", CONTACT_INFO_UI)
+        appendClass(sb, "通讯录 LiveList", ADDRESS_LIVE_LIST)
+        appendClass(sb, "wcdb SQLiteDatabase", WCDB_DB)
+        appendClass(sb, "wcdb compat SQLiteDatabase", WCDB_DB_COMPAT)
+        appendMethod(sb, "ChattingUI.onCreate", CHATTING_UI, "onCreate")
+        appendMethod(sb, "ContactInfoUI.onCreate", CONTACT_INFO_UI, "onCreate")
+        sb.append('\n')
+
         // ── 提示 ──
         sb.append("【说明】\n")
         sb.append("· 显示「关闭」的面 = 该层没有隐藏，请到列表里打开对应开关\n")
         sb.append("· 名单为空 / 临时解除生效时，所有面都会放行（正常行为）\n")
-        sb.append("· 若某面已开启却仍能看到密友，多因当前微信版本该锚点失配，模块日志会记录 [SecretFriend] 相关警告\n")
+        sb.append("· 锚点显示 ❌ = 当前微信版本该面的类/方法已漂移，该面隐藏会失效\n")
+        sb.append("· 若开关已开、锚点也 ✅ 却仍能看到密友，请把本页截图反馈\n")
 
         return sb.toString()
     }
@@ -87,4 +100,30 @@ object SecretFriendDiagnostics : ClickableFeature() {
         sb.append(if (enabled) "✅ " else "❌ ")
         sb.append(label).append("：").append(if (enabled) "开启" else "关闭").append('\n')
     }
+
+    private fun appendClass(sb: StringBuilder, label: String, className: String) {
+        val found = loadClass(className) != null
+        sb.append(if (found) "✅ " else "❌ ")
+        sb.append(label).append("：").append(if (found) "已找到" else "未找到（该面锚点失配）").append('\n')
+    }
+
+    private fun appendMethod(sb: StringBuilder, label: String, className: String, methodName: String) {
+        val found = runCatching {
+            val clazz = loadClass(className) ?: return@runCatching false
+            clazz.declaredMethods.any { it.name == methodName } || clazz.methods.any { it.name == methodName }
+        }.getOrDefault(false)
+        sb.append(if (found) "✅ " else "❌ ")
+        sb.append(label).append("：").append(if (found) "已找到" else "未找到（该面无法拦截）").append('\n')
+    }
+
+    /** 用模块 ClassLoader 解析宿主类；解析不到（类不存在/CL 不可见）返回 null，不抛异常。 */
+    private fun loadClass(className: String): Class<*>? = runCatching {
+        Class.forName(className, false, SecretFriendDiagnostics::class.java.classLoader)
+    }.getOrNull()
+
+    private const val CHATTING_UI = "com.tencent.mm.ui.chatting.ChattingUI"
+    private const val CONTACT_INFO_UI = "com.tencent.mm.plugin.profile.ui.ContactInfoUI"
+    private const val ADDRESS_LIVE_LIST = "com.tencent.mm.ui.contact.address.AddressLiveList"
+    private const val WCDB_DB = "com.tencent.wcdb.database.SQLiteDatabase"
+    private const val WCDB_DB_COMPAT = "com.tencent.wcdb.compat.SQLiteDatabase"
 }
