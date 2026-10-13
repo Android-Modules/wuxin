@@ -64,16 +64,55 @@ object HchatScriptBootstrap {
             " / mmKernel=" + (dex.mmKernelClass?.name ?: "null")
     }
 
-    /** 诊断页用：重置引导状态并重新安装。 */
+    /** 诊断页用：重置引导状态并重新安装（含把所有 Hook 安装任务重排、强制推进到 WARMUP）。 */
     @Synchronized
     fun retry() {
         installed = false
         status = "重新初始化中"
         install()
-        // 重新初始化后，把此前因重试耗尽而暂停的 Hook 安装任务一并恢复，
-        // 否则它们在本次引导成功后也不会再被尝试（数据库/联系人 API 可能一直不可用）。
-        runCatching { DexInstallScheduler.retryPending() }
-            .onFailure { WeLogger.e(TAG, "retryPending 失败", it) }
+        // 重新初始化后：
+        // 一、强制把就绪阶段推进到 WARMUP —— 否则若 wechat_api:warmup 任务没跑成，
+        //     脚本的菜单 / 消息 / 发送按钮等 WARMUP 级 Hook 永远不会被尝试；
+        // 二、把**所有**未安装任务（含仍在重试与已暂停的）计数清零并立即重排。
+        runCatching { DexInstallScheduler.ensureWarmupReady() }
+            .onFailure { WeLogger.e(TAG, "ensureWarmupReady 失败", it) }
+        runCatching { DexInstallScheduler.retryAllPending() }
+            .onFailure { WeLogger.e(TAG, "retryAllPending 失败", it) }
+    }
+
+    /**
+     * 彻底重新初始化：重建整个引导链路，再强制推进就绪阶段、重排所有 Hook 安装任务。
+     * 返回逐步执行日志（供诊断页展示）。
+     */
+    @Synchronized
+    fun reinitializeFully(): List<String> {
+        val log = mutableListOf<String>()
+        installed = false
+        status = "彻底重新初始化中"
+
+        runCatching { install() }.fold(
+            onSuccess = {
+                log += "已重建引导链路（DexKitBridge + WechatApiFeature + ScriptPluginFeature）"
+                log += "引导状态：" + status
+            },
+            onFailure = { log += "重建引导链路异常：" + (it.message ?: it.javaClass.simpleName) },
+        )
+
+        runCatching { DexInstallScheduler.ensureWarmupReady() }.fold(
+            onSuccess = { log += "已强制推进就绪阶段到 " + DexInstallScheduler.readyLevelName() },
+            onFailure = { log += "推进就绪阶段失败：" + (it.message ?: it.javaClass.simpleName) },
+        )
+
+        runCatching { DexInstallScheduler.retryAllPending() }.fold(
+            onSuccess = {
+                val tasks = DexInstallScheduler.snapshot()
+                log += "已重排全部 Hook 安装任务（共 " + tasks.size + " 个，待装 " +
+                        DexInstallScheduler.pendingCount() + " 个）"
+            },
+            onFailure = { log += "重排 Hook 任务失败：" + (it.message ?: it.javaClass.simpleName) },
+        )
+
+        return log
     }
 
     @Synchronized
