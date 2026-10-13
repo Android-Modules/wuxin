@@ -141,6 +141,24 @@ private fun runScriptSelfCheck(context: Context): List<ScriptSelfCheckItem> {
         fixable = !dexOk,
     )
 
+    val abiOk = runCatching {
+        Class.forName("me.hd.wauxv.plugin.api.callback.PluginCallBack")
+    }.isSuccess
+    items += ScriptSelfCheckItem(
+        "脚本运行库（ABI）",
+        abiOk,
+        if (abiOk) "已加载" else "✗ 关键类缺失：插件会全部加载失败，请更新到最新版本",
+        fixable = false,
+    )
+
+    val hookCount = runCatching { HookRegistry.get().size() }.getOrDefault(0)
+    items += ScriptSelfCheckItem(
+        "脚本 Hook 注册",
+        hookCount > 0,
+        if (hookCount > 0) "$hookCount 个" else "✗ 0 个：引导链路可能未完成，试试「重新初始化脚本子系统」",
+        fixable = hookCount == 0,
+    )
+
     val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
     val enabledCount = plugins.count {
         runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
@@ -217,6 +235,12 @@ private fun runScriptSelfRepair(context: Context): List<String> {
         log += "已触发重新加载：" + reloaded + "/" + enabled.size + " 个已启用插件"
     }
 
+    runCatching {
+        Class.forName("me.hd.wauxv.plugin.api.callback.PluginCallBack")
+    }.onFailure {
+        log += "⚠ 脚本运行库（ABI）缺失：插件将无法加载，请更新到最新版本"
+    }
+
     if (log.isEmpty()) log += "没有需要自动修复的项目。"
     return log
 }
@@ -256,6 +280,7 @@ private fun showScriptFixDialog(
 fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var refreshVersion by remember { mutableStateOf(0) }
+    var lastRefresh by remember { mutableStateOf("尚未刷新") }
     val rows = remember(refreshVersion) { collectScriptDiagnostics(context) }
     val scrollBehavior = MiuixScrollBehavior()
 
@@ -272,6 +297,14 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                 bottom = padding.calculateBottomPadding() + 84.dp,
             ),
         ) {
+            item {
+                Text(
+                    text = "最后刷新：$lastRefresh",
+                    fontSize = 12.sp,
+                    color = BasicComponentDefaults.summaryColor().color,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             item { SmallTitle(modifier = Modifier.padding(top = 6.dp), text = "运行时状态") }
             item {
                 SettingsCard {
@@ -292,7 +325,12 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                         showToast("已重新初始化，请稍候再试开关")
                     }
                     InsetDivider()
-                    ActionRow("刷新诊断信息", "重新读取当前运行时状态") { refreshVersion++ }
+                    ActionRow("刷新诊断信息", "重新读取当前运行时状态 · 上次：$lastRefresh") {
+                        refreshVersion++
+                        lastRefresh = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                            .format(java.util.Date())
+                        showToast("诊断信息已刷新")
+                    }
                     InsetDivider()
                     ActionRow("复制诊断信息", "把上面的内容复制到剪贴板，便于反馈") {
                         val text = rows.joinToString("\n") { "${it.first}：${it.second}" }
@@ -539,6 +577,42 @@ private val SCRIPT_FAQ_SECTIONS: List<Pair<String, List<ScriptFaqEntry>>> = list
                 "· 单个插件日志：上面目录下「插件文件夹 / log.txt」（含插件自身输出与加载失败原因）\n" +
                 "· 模块日志目录：/storage/emulated/0/Android/data/com.tencent.mm/WCX/logs\n" +
                 "· 也可以在「脚本功能诊断」页点「复制诊断信息」，一次性复制当前状态。"
+        )
+    ),
+    "七、插件总开关自己关了 / 每次都要重开" to listOf(
+        ScriptFaqEntry(
+            "明明开过，下次进来又变成关闭",
+            "总开关本身不会自动关闭，出现这种情况通常是：\n" +
+                "· 微信被强杀 / 清理数据后，配置还没落盘 → 重新打开一次即可。\n" +
+                "· 你操作的设置页与脚本运行不在同一进程 → 到「脚本功能诊断」确认「插件总开关」的真实值。\n" +
+                "· 仍反复关闭：点「一键修复」会自动开启；若依旧，把「复制诊断信息」的内容反馈给开发者。"
+        )
+    ),
+    "八、开关都正常，但脚本就是不生效" to listOf(
+        ScriptFaqEntry(
+            "总开关已开、诊断全绿，功能却没反应",
+            "按这个顺序自查：\n" +
+                "1. 该插件自己的开关是否已打开（总开关只决定「能不能加载」，单个插件还要各自启用）。\n" +
+                "2. 插件是否只在特定场景触发（收到消息 / 进入聊天 / 打开朋友圈等），需要在对应界面操作才看得到效果。\n" +
+                "3. 看诊断页「脚本 Hook 注册数」，正常应大于 0；若为 0，点「重新初始化脚本子系统」重跑引导链路。\n" +
+                "4. 重启微信后再试一次；仍无效，把「微信版本」+ 插件名反馈给开发者判断兼容性。"
+        )
+    ),
+    "九、提示「Class: PluginCallBack.HttpCallback not found in namespace」" to listOf(
+        ScriptFaqEntry(
+            "插件加载失败，报某个类找不到",
+            "这是「脚本运行库（ABI）」的关键类缺失，属于模块打包问题，不是脚本本身写错。\n" +
+                "· 先确认已更新到最新版本；到「脚本功能诊断」看「脚本运行库（ABI）」一行。\n" +
+                "· 若该项为 ✗，说明当前版本缺少关键类，需要更新模块，一键修复无法解决。"
+        )
+    ),
+    "十、如何彻底重装脚本子系统" to listOf(
+        ScriptFaqEntry(
+            "试了很多次还是不行，想从头来一遍",
+            "1. 「脚本功能诊断」→「重新初始化脚本子系统」，重跑引导链路。\n" +
+                "2. 仍在不行：把微信从最近任务里划掉，确保进程结束后重新打开。\n" +
+                "3. 升级模块后若脚本突然全部失效，请「先卸载旧版、再安装新版」——不同签名的安装包无法直接覆盖安装。\n" +
+                "4. 以上都无效，请「复制诊断信息」反馈，通常能直接定位到卡在哪一步。"
         )
     )
 )
