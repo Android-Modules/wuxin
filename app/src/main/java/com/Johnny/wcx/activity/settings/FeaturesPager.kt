@@ -193,7 +193,11 @@ fun FeaturesPager(onOpenCategory: (String) -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-fun CategoryDetailScreen(categoryName: String, onBack: () -> Unit) {
+fun CategoryDetailScreen(
+    categoryName: String,
+    onBack: () -> Unit,
+    onOpenSecretFriendDiagnostics: () -> Unit,
+) {
     val items = remember(categoryName) {
         FeaturesProvider.ALL_HOOK_ITEMS.filter { categoryName in it.categories }
     }
@@ -262,6 +266,22 @@ fun CategoryDetailScreen(categoryName: String, onBack: () -> Unit) {
                         }
                         Switch(checked = masterEnabled, onCheckedChange = ::applyMasterSwitch)
                     }
+                }
+            }
+        }
+
+        if (isSecretFriendCategory) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth(),
+                ) {
+                    ArrowPreference(
+                        title = "密友功能诊断",
+                        startAction = {},
+                        onClick = { onOpenSecretFriendDiagnostics() },
+                    )
                 }
             }
         }

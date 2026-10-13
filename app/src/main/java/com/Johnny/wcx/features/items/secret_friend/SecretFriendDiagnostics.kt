@@ -28,7 +28,7 @@ object SecretFriendDiagnostics : ClickableFeature() {
     override val alwaysEnabled: Boolean = true
 
     override fun onClick(context: ComponentActivity) {
-        val text = runCatching { buildReport() }.getOrElse { error ->
+        val text = runCatching { buildReportText() }.getOrElse { error ->
             WeLogger.e(TAG, "build report failed", error)
             "诊断信息生成失败：" + (error.message ?: error.javaClass.simpleName)
         }
@@ -41,80 +41,61 @@ object SecretFriendDiagnostics : ClickableFeature() {
         }.onFailure { WeLogger.e(TAG, "show diagnostics failed", it) }
     }
 
-    private fun buildReport(): String {
-        val sb = StringBuilder()
+    /** 结构化诊断行（label -> value），供密友诊断页面渲染。 */
+    fun collectRows(): List<Pair<String, String>> {
+        val rows = mutableListOf<Pair<String, String>>()
 
-        // ── 全局状态 ──
         val masterOn = SecretFriendState.isSecretFriendMasterOn()
         val count = SecretFriendState.getStoredWxIds().size
         val tempShown = SecretFriendState.isTemporarilyShown()
 
-        sb.append("【全局状态】\n")
-        sb.append("总开关（密友名单管理）：").append(if (masterOn) "开启" else "关闭 ❌ 所有隐藏已失效").append('\n')
-        sb.append("名单人数：").append(count)
-        if (count == 0) sb.append("（❌ 名单为空，全部隐藏不生效）")
-        sb.append('\n')
-        sb.append("临时解除：")
-        if (tempShown) sb.append("生效中 ❌ 名单内所有人当前可见") else sb.append("未激活")
-        sb.append("\n\n")
+        rows += "总开关（密友名单管理）" to if (masterOn) "开启" else "关闭（所有隐藏已失效）"
+        rows += "名单人数" to if (count == 0) "0（名单为空，全部隐藏不生效）" else "$count"
+        rows += "临时解除" to if (tempShown) "生效中（名单内所有人当前可见）" else "未激活"
 
-        // ── 各隐藏面 ──
-        sb.append("【隐藏面生效状态】\n")
-        appendFace(sb, "主页会话隐藏", HideConversations.isEnabled)
-        appendFace(sb, "通讯录隐藏", HideSecretContacts.isEnabled)
-        appendFace(sb, "标签内隐藏", HideTagMembers.isEnabled)
-        appendFace(sb, "主页搜索隐藏", HideSearch.isEnabled)
-        appendFace(sb, "禁止进入聊天", BlockChat.isEnabled)
-        appendFace(sb, "禁止查看资料", BlockProfile.isEnabled)
-        appendFace(sb, "朋友圈隐藏", HideMoments.isEnabled)
-        appendFace(sb, "我的朋友圈隐藏", HideMyMoments.isEnabled)
-        appendFace(sb, "最近转发隐藏", HideRecentForward.isEnabled)
-        appendFace(sb, "状态页隐藏", HideStatusPage.isEnabled)
-        appendFace(sb, "存储空间记录隐藏", HideStorageRecords.isEnabled)
-        appendFace(sb, "存储空间缓存隐藏", HideStorageCache.isEnabled)
-        appendFace(sb, "免打扰（密友消息静音）", MuteSecretFriend.isEnabled)
-        sb.append('\n')
+        rows += "── 主页会话隐藏 ──" to faceState(HideConversations.isEnabled)
+        rows += "── 通讯录隐藏 ──" to faceState(HideSecretContacts.isEnabled)
+        rows += "── 标签内隐藏 ──" to faceState(HideTagMembers.isEnabled)
+        rows += "── 主页搜索隐藏 ──" to faceState(HideSearch.isEnabled)
+        rows += "── 禁止进入聊天 ──" to faceState(BlockChat.isEnabled)
+        rows += "── 禁止查看资料 ──" to faceState(BlockProfile.isEnabled)
+        rows += "── 朋友圈隐藏 ──" to faceState(HideMoments.isEnabled)
+        rows += "── 我的朋友圈隐藏 ──" to faceState(HideMyMoments.isEnabled)
+        rows += "── 最近转发隐藏 ──" to faceState(HideRecentForward.isEnabled)
+        rows += "── 状态页隐藏 ──" to faceState(HideStatusPage.isEnabled)
+        rows += "── 存储空间记录隐藏 ──" to faceState(HideStorageRecords.isEnabled)
+        rows += "── 存储空间缓存隐藏 ──" to faceState(HideStorageCache.isEnabled)
+        rows += "── 免打扰（消息静音）──" to faceState(MuteSecretFriend.isEnabled)
 
-        // ── 关键锚点自检 ──
-        sb.append("【关键锚点自检】\n")
-        appendClass(sb, "聊天页 ChattingUI", CHATTING_UI)
-        appendClass(sb, "资料页 ContactInfoUI", CONTACT_INFO_UI)
-        appendClass(sb, "通讯录 LiveList", ADDRESS_LIVE_LIST)
-        appendClass(sb, "wcdb SQLiteDatabase", WCDB_DB)
-        appendClass(sb, "wcdb compat SQLiteDatabase", WCDB_DB_COMPAT)
-        appendMethod(sb, "ChattingUI.onCreate", CHATTING_UI, "onCreate")
-        appendMethod(sb, "ContactInfoUI.onCreate", CONTACT_INFO_UI, "onCreate")
-        sb.append('\n')
+        rows += "── 锚点·聊天页 ChattingUI ──" to probeClass(CHATTING_UI)
+        rows += "── 锚点·资料页 ContactInfoUI ──" to probeClass(CONTACT_INFO_UI)
+        rows += "── 锚点·通讯录 AddressLiveList ──" to probeClass(ADDRESS_LIVE_LIST)
+        rows += "── 锚点·ChattingUI.onCreate ──" to probeMethod(CHATTING_UI, "onCreate")
+        rows += "── 锚点·ContactInfoUI.onCreate ──" to probeMethod(CONTACT_INFO_UI, "onCreate")
+        rows += "── 锚点·wcdb SQLiteDatabase ──" to probeClass(WCDB_DB)
+        rows += "── 锚点·wcdb compat SQLiteDatabase ──" to probeClass(WCDB_DB_COMPAT)
 
-        // ── 提示 ──
-        sb.append("【说明】\n")
-        sb.append("· 显示「关闭」的面 = 该层没有隐藏，请到列表里打开对应开关\n")
-        sb.append("· 名单为空 / 临时解除生效时，所有面都会放行（正常行为）\n")
-        sb.append("· 锚点显示 ❌ = 当前微信版本该面的类/方法已漂移，该面隐藏会失效\n")
-        sb.append("· 若开关已开、锚点也 ✅ 却仍能看到密友，请把本页截图反馈\n")
-
-        return sb.toString()
+        return rows
     }
 
-    private fun appendFace(sb: StringBuilder, label: String, enabled: Boolean) {
-        sb.append(if (enabled) "✅ " else "❌ ")
-        sb.append(label).append("：").append(if (enabled) "开启" else "关闭").append('\n')
+    /** 整段文本（供 ClickableFeature 的弹窗展示）。 */
+    fun buildReportText(): String =
+        collectRows().joinToString("\n") { it.first + "：" + it.second }
+
+    private fun faceState(enabled: Boolean): String =
+        if (enabled) "开启" else "关闭（该层未隐藏）"
+
+    private fun probeClass(className: String): String {
+        val clazz = loadClass(className)
+        return if (clazz != null) "已找到" else "未找到（该面锚点失配）"
     }
 
-    private fun appendClass(sb: StringBuilder, label: String, className: String) {
-        val found = loadClass(className) != null
-        sb.append(if (found) "✅ " else "❌ ")
-        sb.append(label).append("：").append(if (found) "已找到" else "未找到（该面锚点失配）").append('\n')
-    }
-
-    private fun appendMethod(sb: StringBuilder, label: String, className: String, methodName: String) {
-        val found = runCatching {
-            val clazz = loadClass(className) ?: return@runCatching false
-            clazz.declaredMethods.any { it.name == methodName } || clazz.methods.any { it.name == methodName }
-        }.getOrDefault(false)
-        sb.append(if (found) "✅ " else "❌ ")
-        sb.append(label).append("：").append(if (found) "已找到" else "未找到（该面无法拦截）").append('\n')
-    }
+    private fun probeMethod(className: String, methodName: String): String = runCatching {
+        val clazz = loadClass(className) ?: return@runCatching "未找到类（该面无法拦截）"
+        val found = clazz.declaredMethods.any { it.name == methodName } ||
+            clazz.methods.any { it.name == methodName }
+        if (found) "已找到" else "未找到方法（该面无法拦截）"
+    }.getOrElse { "探测异常：" + (it.message ?: it.javaClass.simpleName) }
 
     /** 用模块 ClassLoader 解析宿主类；解析不到（类不存在/CL 不可见）返回 null，不抛异常。 */
     private fun loadClass(className: String): Class<*>? = runCatching {
