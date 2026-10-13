@@ -127,13 +127,23 @@ fun SecretFriendDiagnosticsScreen(onBack: () -> Unit) {
     }
 
     fun openDetail(row: SecretFriendDiagnostics.DiagRow) {
-        runCatching {
-            AlertDialog.Builder(context)
-                .setTitle(row.label)
-                .setMessage("状态：${row.value}\n\n${row.detail}")
-                .setPositiveButton("知道了", null)
-                .show()
+        val builder = AlertDialog.Builder(context)
+            .setTitle(row.label)
+            .setMessage("状态：" + row.value + "\n\n" + row.detail)
+            .setNegativeButton("关闭", null)
+        val act = row.action
+        if (act != null) {
+            builder.setPositiveButton(row.actionLabel ?: "执行") { _, _ ->
+                scope.launch {
+                    val msg = withContext(Dispatchers.IO) {
+                        runCatching { act() }.getOrElse { "执行失败：" + (it.message ?: it.javaClass.simpleName) }
+                    }
+                    showToast(msg)
+                    launchScan("密友功能诊断", { secretFriendDiagSteps() }, showOverlay = false, reportTitle = null, replaceRows = true)
+                }
+            }
         }
+        builder.show()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

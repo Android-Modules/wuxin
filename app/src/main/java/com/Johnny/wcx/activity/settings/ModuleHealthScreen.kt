@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.Johnny.wcx.constants.Preferences
 import com.Johnny.wcx.features.api.core.WeConversationApi
 import com.Johnny.wcx.features.core.FeaturesProvider
 import com.Johnny.wcx.features.hchat.HchatScriptBootstrap
@@ -73,9 +74,8 @@ import java.util.Locale
  * 覆盖：各功能分类启用概况 / 微信公共 API 层（含完整性自检）/ 脚本运行时全链路 /
  * Hook 安装任务逐项 / 关键类锚点 / 密友功能状态。
  *
- * - 进入页面自动检测一次（静默填充）；
- * - 「一键自检」带进度条逐项推进，每一项可点开看详情（含义 + 恢复建议）；
- * - 「一键修复」覆盖所有可自动修复项：补目录 / 开总开关 / 重建引导链路 / 推进阶段 / 重排 Hook / 重载插件 / 密友对账。
+ * 每一项都可点开：弹出「状态 + 含义 + 恢复建议」，可修复的项还带一个**动作按钮**
+ * （如待重试的 Hook 任务可直接「重试安装」、未解析的微信 API 可「一键修复」）。
  */
 @Composable
 fun ModuleHealthScreen(onBack: () -> Unit) {
@@ -138,18 +138,28 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        launchRun("模块自检", { moduleHealthSteps(context) }, showOverlay = false, reportTitle = null, replaceItems = true)
-    }
+    fun rescan() = launchRun("模块自检", { moduleHealthSteps(context) }, showOverlay = false, reportTitle = null, replaceItems = true)
+
+    LaunchedEffect(Unit) { rescan() }
 
     fun openDetail(item: HealthItem) {
-        runCatching {
-            AlertDialog.Builder(context)
-                .setTitle(item.label)
-                .setMessage("状态：${item.value}\n\n${item.detail}")
-                .setPositiveButton("知道了", null)
-                .show()
+        val builder = AlertDialog.Builder(context)
+            .setTitle(item.label)
+            .setMessage("状态：" + item.value + "\n\n" + item.detail)
+            .setNegativeButton("关闭", null)
+        val act = item.action
+        if (act != null) {
+            builder.setPositiveButton(item.actionLabel ?: "执行") { _, _ ->
+                scope.launch {
+                    val msg = withContext(Dispatchers.IO) {
+                        runCatching { act() }.getOrElse { "执行失败：" + (it.message ?: it.javaClass.simpleName) }
+                    }
+                    showToast(msg)
+                    rescan()
+                }
+            }
         }
+        builder.show()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -168,7 +178,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
             ) {
                 item {
                     Text(
-                        text = "最后检测：$lastScan　·　点击任意一项可查看详情",
+                        text = "最后检测：$lastScan　·　点击任意一项可看详情，可修复的项会带动作按钮",
                         fontSize = 12.sp,
                         color = BasicComponentDefaults.summaryColor().color,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -212,7 +222,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
                 item {
                     Text(
                         text = "说明：本页是「全量自检」——覆盖微信公共 API、脚本运行时、Hook 安装任务、关键类锚点、密友状态与各分类启用情况。" +
-                            "标红或标 ❌ 的项，通常就是对应功能失效的原因；点开每一项可看含义与恢复建议。",
+                            "标红或标 ❌ 的项通常就是对应功能失效的原因；点开可看含义、恢复建议与可直接执行的动作。",
                         fontSize = 12.sp,
                         color = BasicComponentDefaults.summaryColor().color,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -280,13 +290,15 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
 //  数据模型
 // ---------------------------------------------------------------------------
 
-/** 一个检测项。[section] 用于分组显示；[detail] 是点开后的含义 + 恢复建议。 */
+/** 一个检测项。[section] 用于分组；[detail] 点开后的含义 + 建议；[action] 非空时详情弹窗带动作按钮。 */
 private data class HealthItem(
     val label: String,
     val section: String,
     val value: String,
     val ok: Boolean,
     val detail: String,
+    val actionLabel: String? = null,
+    val action: (() -> String)? = null,
 )
 
 /** 一个检测/修复步骤：产出一批 [HealthItem]。 */
@@ -340,12 +352,25 @@ private fun showReportDialog(context: Context, title: String, items: List<Health
 
 private fun moduleHealthSteps(context: Context): List<HealthStep> = listOf(
     HealthStep("功能清单与分类启用概况") { featureOverview() },
-    HealthStep("微信公共 API 层") { wechatApiLayer() },
+    HealthStep("微信公共 API 层") { wechatApiLayer(context) },
     HealthStep("脚本运行时") { scriptRuntime(context) },
     HealthStep("Hook 安装任务与就绪阶段") { hookTasks() },
     HealthStep("关键类锚点") { anchors() },
     HealthStep("密友功能") { secretFriendSection() },
 )
+
+/** 「一键修复」动作（重建引导链路），供多处复用。 */
+private fun repairAction(context: Context): Pair<String, () -> String> =
+    "一键修复" to {
+        runCatching { HchatScriptBootstrap.reinitializeFully().joinToString("；") }
+            .getOrElse { "异常：" + (it.message ?: it.javaClass.simpleName) }
+    }
+
+private fun openScriptSwitchAction(context: Context): Pair<String, () -> String> =
+    "开启总开关" to {
+        runCatching { ScriptPluginRuntime.setGlobalEnabled(context, true) }
+            .fold({ "插件总开关已开启" }, { "开启失败：" + (it.message ?: "未知原因") })
+    }
 
 private fun featureOverview(): List<HealthItem> {
     val items = FeaturesProvider.ALL_HOOK_ITEMS
@@ -367,16 +392,17 @@ private fun featureOverview(): List<HealthItem> {
     return out
 }
 
-private fun wechatApiLayer(): List<HealthItem> {
+private fun wechatApiLayer(context: Context): List<HealthItem> {
     val section = "微信公共 API 层"
     val out = mutableListOf<HealthItem>()
-    out += apiItem(section, "微信 API·数据库", runCatching { WeChatApis.database() }.getOrNull())
-    out += apiItem(section, "微信 API·账号", runCatching { WeChatApis.account() }.getOrNull())
-    out += apiItem(section, "微信 API·联系人", runCatching { WeChatApis.contacts() }.getOrNull())
-    out += apiItem(section, "微信 API·会话", runCatching { WeChatApis.conversations() }.getOrNull())
-    out += apiItem(section, "微信 API·消息", runCatching { WeChatApis.messages() }.getOrNull())
-    out += apiItem(section, "微信 API·群聊", runCatching { WeChatApis.chatrooms() }.getOrNull())
-    out += apiItem(section, "微信 API·版本", runCatching { WeChatApis.version() }.getOrNull())
+    val repair = repairAction(context)
+    out += apiItem(section, "微信 API·数据库", runCatching { WeChatApis.database() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·账号", runCatching { WeChatApis.account() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·联系人", runCatching { WeChatApis.contacts() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·会话", runCatching { WeChatApis.conversations() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·消息", runCatching { WeChatApis.messages() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·群聊", runCatching { WeChatApis.chatrooms() }.getOrNull(), repair)
+    out += apiItem(section, "微信 API·版本", runCatching { WeChatApis.version() }.getOrNull(), repair)
 
     val issues = runCatching { WeChatApis.diagnostics()?.buildCompatibilityIssues() }.getOrNull().orEmpty()
     val report = runCatching { WeChatApis.diagnostics()?.buildReport() }.getOrNull().orEmpty()
@@ -389,40 +415,48 @@ private fun wechatApiLayer(): List<HealthItem> {
         } else {
             "以下关键能力缺失，对应的用户功能可能失效：\n$issues\n\n完整报告：\n$report"
         },
+        actionLabel = if (issues.isBlank()) null else repair.first,
+        action = if (issues.isBlank()) null else repair.second,
     )
     return out
 }
 
-private fun apiItem(section: String, label: String, obj: Any?): HealthItem =
+private fun apiItem(section: String, label: String, obj: Any?, repair: Pair<String, () -> String>?): HealthItem =
     if (obj != null) {
         HealthItem(label, section, "已解析", true, "已成功取得该 API 对象：${obj.javaClass.name}。")
     } else {
         HealthItem(
             label, section, "未解析", false,
-            "未取得该 API 对象。\n通常是 DexKit 预热未完成，或当前微信版本未适配。\n可尝试「一键修复」，或在脚本诊断页点「重新初始化脚本子系统」后重启微信。",
+            "未取得该 API 对象。\n通常是 DexKit 预热未完成，或当前微信版本未适配。\n点「${repair?.first ?: "一键修复"}」重建引导链路后可重试。",
+            actionLabel = repair?.first,
+            action = repair?.second,
         )
     }
 
 private fun scriptRuntime(context: Context): List<HealthItem> {
     val section = "脚本运行时"
     val out = mutableListOf<HealthItem>()
+    val repair = repairAction(context)
+    val openSwitch = openScriptSwitchAction(context)
 
     val readinessDetail = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }.getOrNull()
     val ready = readinessDetail == null
     out += HealthItem(
         "脚本运行时就绪", section,
-        if (ready) "已就绪" else "未就绪",
-        ready,
+        if (ready) "已就绪" else "未就绪", ready,
         if (ready) "脚本运行时依赖的微信数据库（rcontact/chatroom）可读，插件可正常加载。"
-        else "未就绪原因：$readinessDetail\n这会导致「插件总开关」打不开、插件全部加载失败。\n点「一键修复」重建引导链路可尝试恢复。",
+        else "未就绪原因：$readinessDetail\n这会导致「插件总开关」打不开、插件全部加载失败。",
+        actionLabel = if (ready) null else repair.first,
+        action = if (ready) null else repair.second,
     )
 
     val bootstrap = runCatching { HchatScriptBootstrap.status }.getOrDefault("未知")
+    val bootstrapOk = bootstrap.contains("成功") || bootstrap.contains("已安装")
     out += HealthItem(
-        "脚本引导链路", section,
-        if (bootstrap.contains("成功") || bootstrap.contains("已安装")) "已就绪" else "未就绪",
-        bootstrap.contains("成功") || bootstrap.contains("已安装"),
-        "引导链路状态：$bootstrap\n若未就绪，点「一键修复」重建。",
+        "脚本引导链路", section, if (bootstrapOk) "已就绪" else "未就绪", bootstrapOk,
+        "引导链路状态：$bootstrap",
+        actionLabel = if (bootstrapOk) null else repair.first,
+        action = if (bootstrapOk) null else repair.second,
     )
 
     val globalOn = runCatching {
@@ -430,25 +464,25 @@ private fun scriptRuntime(context: Context): List<HealthItem> {
             .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
     }.getOrDefault(false)
     out += HealthItem(
-        "插件总开关", section,
-        if (globalOn) "已开启" else "已关闭",
-        globalOn,
+        "插件总开关", section, if (globalOn) "已开启" else "已关闭", globalOn,
         if (globalOn) "插件总开关已开启，启动时会自动加载已启用的插件。"
-        else "插件总开关未开启，所有脚本插件都不会工作。点「一键修复」会自动开启。",
+        else "插件总开关未开启，所有脚本插件都不会工作。",
+        actionLabel = if (globalOn) null else openSwitch.first,
+        action = if (globalOn) null else openSwitch.second,
     )
 
     val hookCount = runCatching { HookRegistry.get().size() }.getOrDefault(0)
     out += HealthItem(
-        "脚本 Hook 注册", section,
-        "$hookCount 个", hookCount > 0,
+        "脚本 Hook 注册", section, "$hookCount 个", hookCount > 0,
         if (hookCount > 0) "已注册 $hookCount 个 Hook（脚本的消息/菜单等监听）。"
-        else "0 个：脚本引导链路可能未完成。点「一键修复」重建引导链路。",
+        else "0 个：脚本引导链路可能未完成。",
+        actionLabel = if (hookCount > 0) null else repair.first,
+        action = if (hookCount > 0) null else repair.second,
     )
 
     val abi = runCatching { Class.forName("me.hd.wauxv.plugin.api.callback.PluginCallBack") }.isSuccess
     out += HealthItem(
-        "脚本运行库（ABI）", section,
-        if (abi) "已加载" else "缺失", abi,
+        "脚本运行库（ABI）", section, if (abi) "已加载" else "缺失", abi,
         if (abi) "插件运行时依赖的关键类已加载。"
         else "关键类缺失：插件会全部加载失败，请更新到最新版本（无法自动修复）。",
     )
@@ -458,8 +492,7 @@ private fun scriptRuntime(context: Context): List<HealthItem> {
         runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
     }
     out += HealthItem(
-        "本地插件", section,
-        "已装 ${plugins.size} 个，已启用 $enabledPlugins 个",
+        "本地插件", section, "已装 ${plugins.size} 个，已启用 $enabledPlugins 个",
         plugins.isEmpty() || enabledPlugins > 0,
         when {
             plugins.isEmpty() -> "尚未安装任何脚本插件。可到「脚本」页的在线插件市场安装。"
@@ -469,18 +502,27 @@ private fun scriptRuntime(context: Context): List<HealthItem> {
     )
 
     val loadErrors = collectPluginLoadErrors(context)
+    val reloadAct: Pair<String, () -> String> = "重载全部插件" to {
+        val enabled = plugins.filter {
+            runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+        }
+        var ok = 0
+        enabled.forEach { p -> runCatching { ScriptPluginRuntime.reloadPluginAsync(context, p.id) }.onSuccess { ok++ } }
+        "已重载 $ok/${enabled.size} 个已启用插件"
+    }
     out += HealthItem(
         "插件加载错误", section,
         if (loadErrors.isEmpty()) "无" else loadErrors.joinToString(" ｜ "),
         loadErrors.isEmpty(),
         if (loadErrors.isEmpty()) "最近一次插件加载没有报错。"
-        else "以下插件最近一次加载失败：\n" + loadErrors.joinToString("\n") + "\n可到「脚本」页查看插件详情或重装。",
+        else "以下插件最近一次加载失败：\n" + loadErrors.joinToString("\n") + "\n可尝试重载全部插件。",
+        actionLabel = if (loadErrors.isEmpty()) null else reloadAct.first,
+        action = if (loadErrors.isEmpty()) null else reloadAct.second,
     )
 
     val server = runCatching { PluginMarketSettings.serviceUrl(context) }.getOrNull().orEmpty()
     out += HealthItem(
-        "市场服务器地址", section,
-        server.ifBlank { "为空" }, server.isNotBlank(),
+        "市场服务器地址", section, server.ifBlank { "为空" }, server.isNotBlank(),
         if (server.isNotBlank()) "在线插件市场服务器：$server"
         else "为空——在线插件市场不可用。到「脚本功能诊断」页切换服务器。",
     )
@@ -492,23 +534,35 @@ private fun hookTasks(): List<HealthItem> {
     val snapshot = runCatching { DexInstallScheduler.snapshot() }.getOrDefault(emptyList())
     val pending = snapshot.count { !it.installed }
     val out = mutableListOf<HealthItem>()
+
+    val retryAll: Pair<String, () -> String> = "重排重试" to {
+        runCatching { DexInstallScheduler.ensureWarmupReady(); DexInstallScheduler.retryAllPending() }
+        "已触发重排重试，当前待装 " + runCatching { DexInstallScheduler.pendingCount() }.getOrDefault(0) + " 个"
+    }
     out += HealthItem(
-        "Hook 安装任务", section,
-        "共 ${snapshot.size} 个，待装 $pending", pending == 0,
-        "模块共有 ${snapshot.size} 个需要 DexKit 解析后安装的 Hook 任务，当前待装 $pending 个。\n待装/失败的任务会让对应功能暂时失效，点「一键修复」可重排重试。",
+        "Hook 安装任务", section, "共 ${snapshot.size} 个，待装 $pending", pending == 0,
+        "模块共有 ${snapshot.size} 个需要 DexKit 解析后安装的 Hook 任务，当前待装 $pending 个。\n待装/失败的任务会让对应功能暂时失效。",
+        actionLabel = if (pending == 0) null else retryAll.first,
+        action = if (pending == 0) null else retryAll.second,
     )
     snapshot.forEach { task ->
         val ok = task.installed
         val value = if (ok) "✅ 已安装" else "⚠ ${if (task.paused) "已暂停" else "待重试"}（第 ${task.retryIndex} 次）"
         out += HealthItem(
             "· ${task.label}", section, value, ok,
-            "key=${task.key}\n阶段=${task.stage}\n运行中=${task.running}\n已暂停=${task.paused}\n重试次数=${task.retryIndex}",
+            "key=${task.key}\n阶段=${task.stage}\n运行中=${task.running}\n已暂停=${task.paused}\n重试次数=${task.retryIndex}\n\n" +
+                if (ok) "该 Hook 已安装完成。"
+                else "该 Hook 尚未安装成功——点「重试安装」立即重排重试（推进到 WARMUP 后再执行一轮）。",
+            actionLabel = if (ok) null else "重试安装",
+            action = if (ok) null else retryAll.second,
         )
     }
     val level = runCatching { DexInstallScheduler.readyLevelName() }.getOrDefault("未知")
     out += HealthItem(
         "就绪阶段", section, level, level.contains("WARMUP"),
         "阶段顺序：EARLY < BRIDGE < WARMUP。\n只有推进到 WARMUP 后，脚本级 Hook（菜单/消息监听等）才会执行。当前为 $level。",
+        actionLabel = if (level.contains("WARMUP")) null else retryAll.first,
+        action = if (level.contains("WARMUP")) null else retryAll.second,
     )
     return out
 }
@@ -527,12 +581,11 @@ private fun anchorItem(name: String, className: String): HealthItem {
     val found = runCatching { Class.forName(className, false, ClassLoaders.MODULE) }.isSuccess
     return HealthItem(
         "锚点·$name", "关键类锚点",
-        if (found) "已找到" else "未找到",
-        found,
+        if (found) "已找到" else "未找到", found,
         "类 $className\n" + if (found) {
             "在当前微信版本中存在，依赖它的功能有锚点可用。"
         } else {
-            "未找到——依赖它的功能在当前微信版本可能已漂移/失效，需要适配。"
+            "未找到——依赖它的功能在当前微信版本可能已漂移/失效，需要适配（无法自动修复）。"
         },
     )
 }
@@ -541,9 +594,15 @@ private fun secretFriendSection(): List<HealthItem> {
     val section = "密友功能"
     val out = mutableListOf<HealthItem>()
     val master = SecretFriendState.isSecretFriendMasterOn()
+    val openMaster: () -> String = {
+        runCatching { Preferences.secretFriendMasterEnabled = true }
+        "密友功能总开关已开启；若名单为空请到「密友名单管理」添加密友"
+    }
     out += HealthItem(
         "密友总开关", section, if (master) "开启" else "关闭", master,
-        "密友功能的总开关（在「密友功能」分类页顶部）。关闭后所有隐藏/拦截都不生效，名单保留。\n当前：${if (master) "开启" else "关闭"}。",
+        "密友功能的总开关（在「密友功能」分类页顶部）。关闭后所有隐藏/拦截都不生效，名单保留。",
+        actionLabel = if (master) null else "开启总开关",
+        action = if (master) null else openMaster,
     )
     val count = SecretFriendState.getStoredWxIds().size
     out += HealthItem(
@@ -562,6 +621,12 @@ private fun secretFriendSection(): List<HealthItem> {
     out += HealthItem(
         "密友隐藏面生效", section, "$onFaces/${faces.size}", master && onFaces == faces.size,
         "13 个隐藏面里当前有 $onFaces 个处于「生效」状态。\n未生效的多为开关未开或总开关关闭；到「密友功能诊断」页可逐面查看。",
+        actionLabel = "重新对账",
+        action = {
+            val a = runCatching { HideConversations.reconcileOnListChange() }.isSuccess
+            runCatching { WeConversationApi.reloadConversations() }
+            if (a) "已按当前名单重新对账并刷新会话列表" else "对账失败"
+        },
     )
     return out
 }
@@ -580,8 +645,7 @@ private fun moduleRepairSteps(context: Context): List<HealthStep> = listOf(
         }
         listOf(
             HealthItem(
-                "脚本目录", "补建脚本目录",
-                if (ok) "就绪" else "失败", ok,
+                "脚本目录", "补建脚本目录", if (ok) "就绪" else "失败", ok,
                 dir?.let { "目录：" + it.absolutePath + if (ok) "（已就绪）" else "（创建失败）" } ?: "无法获取脚本目录",
             )
         )
@@ -628,10 +692,7 @@ private fun moduleRepairSteps(context: Context): List<HealthStep> = listOf(
             runCatching { ScriptPluginRuntime.reloadPluginAsync(context, plugin.id) }.onSuccess { ok++ }
         }
         listOf(
-            HealthItem(
-                "已启用插件", "重新加载全部已启用插件",
-                "已重载 $ok/${enabled.size} 个", true, "重新加载了所有已启用的脚本插件。",
-            )
+            HealthItem("已启用插件", "重新加载全部已启用插件", "已重载 $ok/${enabled.size} 个", true, "重新加载了所有已启用的脚本插件。")
         )
     },
     HealthStep("密友隐藏面重新对账") {

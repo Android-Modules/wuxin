@@ -3,6 +3,7 @@ package com.Johnny.wcx.activity.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -437,7 +438,7 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                             val value = row.second
                             val warn = value.contains("✗") || value.contains("❌") ||
                                 value.contains("未解析") || value.contains("失败") || value.contains("等待")
-                            DiagnosticRow(row.first, value, warn)
+                            DiagnosticRow(row.first, value, warn) { refreshVersion++ }
                         }
                     }
                 }
@@ -552,12 +553,32 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
 
 
 @Composable
-private fun DiagnosticRow(label: String, value: String, warn: Boolean) {
+private fun DiagnosticRow(label: String, value: String, warn: Boolean, onActionDone: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { showScriptInfoDialog(context, label, value + "\n\n" + scriptDiagHint(label)) }
+            .clickable {
+                val action = scriptDiagAction(context, label)
+                val builder = android.app.AlertDialog.Builder(context)
+                    .setTitle(label)
+                    .setMessage(value + "\n\n" + scriptDiagHint(label))
+                    .setNegativeButton("关闭", null)
+                if (action != null) {
+                    builder.setPositiveButton(action.first) { _, _ ->
+                        scope.launch {
+                            val msg = withContext(Dispatchers.IO) {
+                                runCatching { action.second() }
+                                    .getOrElse { "执行失败：" + (it.message ?: it.javaClass.simpleName) }
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            onActionDone()
+                        }
+                    }
+                }
+                builder.show()
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -576,6 +597,29 @@ private fun DiagnosticRow(label: String, value: String, warn: Boolean) {
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/** 该行可执行的动作（仅可修复的项返回；点开详情时显示为按钮）。 */
+private fun scriptDiagAction(context: Context, label: String): Pair<String, () -> String>? = when {
+    label.contains("插件总开关") -> {
+        val on = runCatching {
+            HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
+                .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
+        }.getOrDefault(false)
+        if (on) null else "开启总开关" to {
+            runCatching { ScriptPluginRuntime.setGlobalEnabled(context, true) }
+                .fold({ "插件总开关已开启" }, { "开启失败：" + it.message.orEmpty() })
+        }
+    }
+    label.contains("Hook 安装任务") || label.contains("·") -> "重排重试" to {
+        DexInstallScheduler.ensureWarmupReady()
+        DexInstallScheduler.retryAllPending()
+        "已重排重试，当前待装 " + DexInstallScheduler.pendingCount() + " 个"
+    }
+    label.contains("未就绪原因") || label.contains("DexKit") -> "一键修复" to {
+        HchatScriptBootstrap.reinitializeFully().joinToString("；")
+    }
+    else -> null
 }
 
 /** 每行诊断点开后的说明（含义 + 处理建议）。 */
