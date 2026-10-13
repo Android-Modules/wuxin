@@ -21,6 +21,12 @@ import com.Johnny.wcx.utils.WeLogger
     categories = ["密友功能"],
     description = "查看密友各隐藏面的实际生效状态：总开关、名单人数、临时解除、每个面的开关，以及关键锚点是否解析成功"
 )
+/** 密友总开关开启动作（供诊断行直接执行）。 */
+private val OPEN_MASTER_ACTION: () -> String = {
+    runCatching { Preferences.secretFriendMasterEnabled = true }
+    "密友功能总开关已开启；若名单为空请到「密友名单管理」添加密友"
+}
+
 object SecretFriendDiagnostics : ClickableFeature() {
 
     private const val TAG = "SecretFriendDiagnostics"
@@ -35,6 +41,8 @@ object SecretFriendDiagnostics : ClickableFeature() {
         val value: String,
         val ok: Boolean,
         val detail: String,
+        val actionLabel: String? = null,
+        val action: (() -> String)? = null,
     )
 
     override fun onClick(context: ComponentActivity) {
@@ -73,6 +81,8 @@ object SecretFriendDiagnostics : ClickableFeature() {
             detail = "总开关 = 「密友功能」分类页顶部的开关，缺省开启。\n" +
                 "关闭后本分类下所有隐藏/拦截都不生效，且名单保留、重开即恢复。\n" +
                 "当前：${if (masterOn) "开启" else "关闭"}（存储键 ${Preferences.SECRET_FRIEND_MASTER_ENABLED}）。",
+            actionLabel = if (masterOn) null else "开启总开关",
+            action = if (masterOn) null else OPEN_MASTER_ACTION,
         )
         val listOk = count > 0
         rows += DiagRow(
