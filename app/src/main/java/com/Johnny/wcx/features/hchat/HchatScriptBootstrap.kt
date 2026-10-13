@@ -1,5 +1,7 @@
 package com.Johnny.wcx.features.hchat
 
+import android.os.Handler
+import android.os.Looper
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.reflection.ClassLoaders
@@ -176,6 +178,10 @@ object HchatScriptBootstrap {
             runCatching { DexInstallScheduler.markDexBridgeReady() }
                 .onFailure { WeLogger.e(TAG, "markDexBridgeReady 失败", it) }
 
+            // 冷启动时 DexKit 预热可能较慢、或 warmup 任务偶发没跑成，导致阶段卡在 BRIDGE、
+            // 脚本页显示未就绪而需要用户手动修复。这里起一个轻量自愈看门狗。
+            scheduleReadyWatchdog()
+
             WeLogger.i(TAG, "Hchat 脚本子系统已安装（WechatApiFeature + ScriptPluginFeature + markDexBridgeReady）")
 
             // 就绪自检：把最终结果写进 WCX 日志，避免「总开关一直提示未就绪」时无从定位。
@@ -199,5 +205,29 @@ object HchatScriptBootstrap {
             status = "引导异常：" + (it.message ?: it.javaClass.simpleName)
             WeLogger.e(TAG, "Hchat 脚本子系统安装失败", it)
         }
+    }
+
+    /**
+     * 冷启动自愈看门狗：定时重排未装 Hook 任务；若多轮仍未推进到 WARMUP，则强制推进。
+     * 目的：让「强停后/更新后重启」不再需要用户手动去脚本诊断里点修复。
+     */
+    private fun scheduleReadyWatchdog() {
+        val handler = Handler(Looper.getMainLooper())
+        var attempts = 0
+        val task = object : Runnable {
+            override fun run() {
+                attempts++
+                val level = runCatching { DexInstallScheduler.readyLevelName() }.getOrDefault("")
+                if (level.contains("WARMUP")) return
+                runCatching { DexInstallScheduler.retryAllPending() }
+                    .onFailure { WeLogger.e(TAG, "看门狗重排失败", it) }
+                if (attempts >= 3) {
+                    runCatching { DexInstallScheduler.ensureWarmupReady() }
+                        .onFailure { WeLogger.e(TAG, "看门狗强制推进失败", it) }
+                }
+                if (attempts < 8) handler.postDelayed(this, 5_000L)
+            }
+        }
+        handler.postDelayed(task, 5_000L)
     }
 }
