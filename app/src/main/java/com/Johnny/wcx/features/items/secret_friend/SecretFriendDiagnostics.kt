@@ -16,17 +16,17 @@ import com.Johnny.wcx.utils.WeLogger
  * 每个隐藏面的开关状态，以及**关键锚点是否解析成功**（类/方法是否存在），
  * 据此可直接判断是「开关没开」还是「当前微信版本锚点漂移」。
  */
-@Feature(
-    name = "密友功能诊断",
-    categories = ["密友功能"],
-    description = "查看密友各隐藏面的实际生效状态：总开关、名单人数、临时解除、每个面的开关，以及关键锚点是否解析成功"
-)
 /** 密友总开关开启动作（供诊断行直接执行）。 */
 private val OPEN_MASTER_ACTION: () -> String = {
     runCatching { Preferences.secretFriendMasterEnabled = true }
     "密友功能总开关已开启；若名单为空请到「密友名单管理」添加密友"
 }
 
+@Feature(
+    name = "密友功能诊断",
+    categories = ["密友功能"],
+    description = "查看密友各隐藏面的实际生效状态：总开关、名单人数、临时解除、每个面的开关，以及关键锚点是否解析成功"
+)
 object SecretFriendDiagnostics : ClickableFeature() {
 
     private const val TAG = "SecretFriendDiagnostics"
