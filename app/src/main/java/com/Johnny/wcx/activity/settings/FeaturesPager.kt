@@ -24,6 +24,7 @@ import com.Johnny.wcx.features.core.FeaturesProvider
 import com.Johnny.wcx.features.core.SwitchFeature
 import com.Johnny.wcx.features.items.easter_egg.AprilFools
 import com.Johnny.wcx.features.items.easter_egg.isAprilFools
+import com.Johnny.wcx.features.items.secret_friend.SecretFriendManager
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.android.showToastSuspend
 import kotlinx.coroutines.CoroutineScope
@@ -217,7 +218,13 @@ fun CategoryDetailScreen(
         masterEnabled = next
         Preferences.secretFriendMasterEnabled = next
         items.filterIsInstance<SwitchFeature>().forEach { feature ->
-            feature.isEnabled = next && WePrefs.getBoolOrFalse(feature.name)
+            // 「密友名单管理」是密友名单编辑入口（无独立开关），直接跟随总开关；
+            // 其余功能按各自原有开关状态恢复。
+            feature.isEnabled = if (feature.name == SecretFriendManager.name) {
+                next
+            } else {
+                next && WePrefs.getBoolOrFalse(feature.name)
+            }
         }
         switchStates.keys.forEach { key ->
             switchStates[key] = next && WePrefs.getBoolOrFalse(key)
