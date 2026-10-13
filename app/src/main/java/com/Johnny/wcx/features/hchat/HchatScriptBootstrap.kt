@@ -70,6 +70,10 @@ object HchatScriptBootstrap {
         installed = false
         status = "重新初始化中"
         install()
+        // 重新初始化后，把此前因重试耗尽而暂停的 Hook 安装任务一并恢复，
+        // 否则它们在本次引导成功后也不会再被尝试（数据库/联系人 API 可能一直不可用）。
+        runCatching { DexInstallScheduler.retryPending() }
+            .onFailure { WeLogger.e(TAG, "retryPending 失败", it) }
     }
 
     @Synchronized
