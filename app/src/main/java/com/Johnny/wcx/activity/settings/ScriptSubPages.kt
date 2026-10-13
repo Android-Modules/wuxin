@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -106,88 +107,154 @@ private data class ScriptSelfCheckItem(
 private class ScriptRunStep(val label: String, val run: () -> Pair<Boolean, String>)
 
 /** 逐项自检步骤：覆盖脚本运行全链路（目录 / 开关 / 引导 / 数据库 API / DexKit / Hook 任务 / 插件 / ABI / 服务器）。 */
-private fun scriptSelfCheckSteps(context: Context): List<ScriptRunStep> = listOf(
-    ScriptRunStep("脚本目录") {
+private fun apiCheck(get: () -> Any?): Pair<Boolean, String> {
+    val ok = runCatching { get() }.getOrNull() != null
+    return ok to (if (ok) "已解析" else "未解析：DexKit 未完成或当前微信版本未适配")
+}
+
+/**
+ * 全量自检步骤：覆盖脚本运行全链路——
+ * 目录 / 总开关 / 引导 / 微信公共 API 全套 / 数据库取库 / DexKit / 就绪阶段 /
+ * Hook 任务逐项 / 脚本 Hook 注册 / ABI / 本地插件逐项 / 插件加载错误 / 市场 / 环境。
+ */
+private fun scriptSelfCheckSteps(context: Context): List<ScriptRunStep> {
+    val steps = mutableListOf<ScriptRunStep>()
+
+    steps += ScriptRunStep("脚本目录") {
         val dir = runCatching { ScriptPluginRuntime.scriptDir(context) }.getOrNull()
         val ok = dir != null && dir.isDirectory
         ok to (dir?.absolutePath ?: "无法获取脚本目录")
-    },
-    ScriptRunStep("插件总开关") {
+    }
+    steps += ScriptRunStep("插件总开关") {
         val on = runCatching {
             HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
                 .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
         }.getOrDefault(false)
         on to (if (on) "已开启" else "未开启：插件不会被加载")
-    },
-    ScriptRunStep("引导链路") {
+    }
+    steps += ScriptRunStep("引导链路") {
         val s = runCatching { HchatScriptBootstrap.status }.getOrDefault("未知")
         (s.contains("成功") || s.contains("已安装")) to s
-    },
-    ScriptRunStep("脚本运行时就绪") {
+    }
+    steps += ScriptRunStep("脚本运行时就绪") {
         val detail = runCatching { ScriptPluginRuntime.scriptApiReadinessDetail() }.getOrNull()
         (detail == null) to (detail ?: "已就绪")
-    },
-    ScriptRunStep("微信数据库 API") {
-        val ok = runCatching { WeChatApis.database() }.getOrNull() != null
-        ok to (if (ok) "已解析" else "未解析：DexKit 未完成或当前微信版本未适配")
-    },
-    ScriptRunStep("微信账号 API") {
-        val ok = runCatching { WeChatApis.account() }.getOrNull() != null
-        ok to (if (ok) "已解析" else "未解析：DexKit 未完成或当前微信版本未适配")
-    },
-    ScriptRunStep("微信联系人 API") {
-        val ok = runCatching { WeChatApis.contacts() }.getOrNull() != null
-        ok to (if (ok) "已解析" else "未解析：DexKit 未完成或当前微信版本未适配")
-    },
-    ScriptRunStep("DexKit 解析") {
+    }
+
+    // —— 微信公共 API 全套 ——
+    steps += ScriptRunStep("微信数据库 API") { apiCheck { WeChatApis.database() } }
+    steps += ScriptRunStep("微信账号 API") { apiCheck { WeChatApis.account() } }
+    steps += ScriptRunStep("微信联系人 API") { apiCheck { WeChatApis.contacts() } }
+    steps += ScriptRunStep("微信会话 API") { apiCheck { WeChatApis.conversations() } }
+    steps += ScriptRunStep("微信消息 API") { apiCheck { WeChatApis.messages() } }
+    steps += ScriptRunStep("微信群聊 API") { apiCheck { WeChatApis.chatrooms() } }
+    steps += ScriptRunStep("微信版本 API") {
+        val v = runCatching { WeChatApis.version()?.current()?.displayVersion() }.getOrNull()
+        (v?.isNotBlank() == true) to (v ?: "未解析：DexKit 未完成或当前微信版本未适配")
+    }
+    steps += ScriptRunStep("微信 API 完整性自检") {
+        val issues = runCatching { WeChatApis.diagnostics()?.buildCompatibilityIssues() }.getOrNull().orEmpty()
+        (issues.isBlank()) to (if (issues.isBlank()) "全部关键能力就绪" else "缺失：" + issues.replace("\n", " / "))
+    }
+
+    // —— 数据库取库链路 ——
+    steps += ScriptRunStep("数据库 API 可用") {
+        val ok = runCatching { (WeChatApis.database() as? WeChatDatabaseApi)?.isAvailable() == true }.getOrDefault(false)
+        ok to (if (ok) "是（已定位 CoreStorage/SqliteDB 类）" else "否（未解析出 CoreStorage 或 SqliteDB 类）")
+    }
+    steps += ScriptRunStep("数据库对象就绪") {
+        val ok = runCatching { (WeChatApis.database() as? WeChatDatabaseApi)?.isReady() == true }.getOrDefault(false)
+        ok to (if (ok) "是（已取得 SqliteDB 对象）" else "否（CoreStorage 里找不到 SqliteDB 对象）")
+    }
+    steps += ScriptRunStep("数据库取库自检") {
+        val d = runCatching { (WeChatApis.database() as? WeChatDatabaseApi)?.diagnose() }.getOrNull()
+        (d != null) to (d ?: "无（数据库 API 未解析）")
+    }
+
+    steps += ScriptRunStep("DexKit 解析") {
         val info = runCatching { HchatScriptBootstrap.dexParseInfo() }.getOrDefault("")
         val ok = info.isNotBlank() && !info.contains("未初始化")
         ok to info.ifBlank { "无信息" }
-    },
-    ScriptRunStep("就绪阶段") {
+    }
+    steps += ScriptRunStep("就绪阶段") {
         val lvl = runCatching { DexInstallScheduler.readyLevelName() }.getOrDefault("未知")
         lvl.contains("WARMUP") to lvl
-    },
-    ScriptRunStep("Hook 安装任务") {
+    }
+
+    // —— Hook 安装任务：总览 + 逐项 ——
+    steps += ScriptRunStep("Hook 安装任务总览") {
         val total = runCatching { DexInstallScheduler.snapshot().size }.getOrDefault(0)
         val pending = runCatching { DexInstallScheduler.pendingCount() }.getOrDefault(0)
         val failed = runCatching { DexInstallScheduler.failedCount() }.getOrDefault(0)
         (total > 0 && pending == 0) to
             ("共 $total 个任务，已装 ${total - pending}，待装 $pending，失败暂停 $failed")
-    },
-    ScriptRunStep("脚本 Hook 注册") {
+    }
+    runCatching { DexInstallScheduler.snapshot() }.getOrDefault(emptyList()).forEach { task ->
+        steps += ScriptRunStep("Hook·${task.label}") {
+            task.installed to (if (task.installed) "已安装" else
+                "待装（第 ${task.retryIndex} 次${if (task.paused) "，已暂停" else ""}）")
+        }
+    }
+
+    steps += ScriptRunStep("脚本 Hook 注册") {
         val n = runCatching { HookRegistry.get().size() }.getOrDefault(0)
         (n > 0) to (if (n > 0) "$n 个" else "0 个：引导链路可能未完成，试试「重新初始化脚本子系统」")
-    },
-    ScriptRunStep("脚本运行库（ABI）") {
+    }
+    steps += ScriptRunStep("脚本运行库（ABI）") {
         val ok = runCatching { Class.forName("me.hd.wauxv.plugin.api.callback.PluginCallBack") }.isSuccess
         ok to (if (ok) "已加载" else "关键类缺失：插件会全部加载失败，请更新到最新版本")
-    },
-    ScriptRunStep("本地插件") {
-        val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
-        val enabled = plugins.count {
-            runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
-        }
-        val noEnabled = plugins.isNotEmpty() && enabled == 0
+    }
+
+    // —— 本地插件：总览 + 逐项 ——
+    val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
+    val enabledCount = plugins.count {
+        runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+    }
+    steps += ScriptRunStep("本地插件") {
+        val noEnabled = plugins.isNotEmpty() && enabledCount == 0
         (!noEnabled) to when {
             plugins.isEmpty() -> "尚未安装任何插件"
             noEnabled -> "已安装 ${plugins.size} 个，但一个都没有启用"
-            else -> "已安装 ${plugins.size} 个，已启用 $enabled 个"
+            else -> "已安装 ${plugins.size} 个，已启用 $enabledCount 个"
         }
-    },
-    ScriptRunStep("插件加载错误") {
+    }
+    plugins.forEach { plugin ->
+        steps += ScriptRunStep("插件·${plugin.displayName ?: plugin.id}") {
+            if (!plugin.dir.isDirectory) {
+                false to "插件目录缺失"
+            } else {
+                val enabled = runCatching { ScriptPluginRuntime.isPluginEnabled(context, plugin.id) }.getOrDefault(false)
+                true to (if (enabled) "已启用" else "未启用")
+            }
+        }
+    }
+    steps += ScriptRunStep("插件加载错误") {
         val errors = collectPluginLoadErrors(context)
         errors.isEmpty() to (if (errors.isEmpty()) "无" else errors.joinToString(" ｜ "))
-    },
-    ScriptRunStep("市场服务器地址") {
+    }
+
+    steps += ScriptRunStep("市场服务器地址") {
         val server = runCatching { PluginMarketSettings.serviceUrl(context) }.getOrNull().orEmpty()
         server.isNotBlank() to server.ifBlank { "为空：在线插件市场不可用" }
-    },
-)
+    }
+    steps += ScriptRunStep("宿主进程") {
+        val p = runCatching { TargetProcesses.currentName }.getOrDefault("未知")
+        p.isNotBlank() to p
+    }
+    steps += ScriptRunStep("模块版本") {
+        true to "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
+    }
+    steps += ScriptRunStep("日志目录") {
+        val d = runCatching { KnownPaths.moduleData.resolve("logs").toString() }.getOrNull()
+        (d != null) to (d ?: "未知")
+    }
+    return steps
+}
 
 /** 整套修复步骤：所有能修的、能初始化的都做一遍（目录 / 开关 / 引导 / 阶段 / Hook 任务 / 插件 / ABI）。 */
-private fun scriptRepairSteps(context: Context): List<ScriptRunStep> = listOf(
-    ScriptRunStep("补建脚本目录") {
+private fun scriptRepairSteps(context: Context): List<ScriptRunStep> {
+    val steps = mutableListOf<ScriptRunStep>()
+    steps += ScriptRunStep("补建脚本目录") {
         val dir = runCatching { ScriptPluginRuntime.scriptDir(context) }.getOrNull()
         if (dir == null) {
             false to "无法获取脚本目录"
@@ -197,8 +264,8 @@ private fun scriptRepairSteps(context: Context): List<ScriptRunStep> = listOf(
             val created = dir.mkdirs() || dir.isDirectory
             created to (if (created) "已创建：${dir.absolutePath}" else "创建失败：${dir.absolutePath}")
         }
-    },
-    ScriptRunStep("开启插件总开关") {
+    }
+    steps += ScriptRunStep("开启插件总开关") {
         val on = runCatching {
             HchatStorage.preferences(context, ScriptPluginSettings.PREFS_NAME)
                 .getBoolean(ScriptPluginSettings.KEY_ENABLE, ScriptPluginSettings.DEFAULT_ENABLE)
@@ -206,38 +273,39 @@ private fun scriptRepairSteps(context: Context): List<ScriptRunStep> = listOf(
         if (on) true to "已是开启状态"
         else runCatching { ScriptPluginRuntime.setGlobalEnabled(context, true) }
             .fold({ true to "已开启" }, { false to ("开启失败：" + it.message.orEmpty()) })
-    },
-    ScriptRunStep("彻底重新初始化引导链路") {
+    }
+    steps += ScriptRunStep("彻底重新初始化引导链路") {
         val lines = runCatching { HchatScriptBootstrap.reinitializeFully() }
             .getOrElse { listOf("异常：" + (it.message ?: it.javaClass.simpleName)) }
         true to lines.joinToString("；")
-    },
-    ScriptRunStep("推进就绪阶段并重排全部 Hook 任务") {
+    }
+    steps += ScriptRunStep("推进就绪阶段并重排全部 Hook 任务") {
         DexInstallScheduler.ensureWarmupReady()
         DexInstallScheduler.retryAllPending()
         true to ("阶段=" + DexInstallScheduler.readyLevelName() +
             "，待装 " + DexInstallScheduler.pendingCount() + " 个")
-    },
-    ScriptRunStep("重新加载全部已启用插件") {
-        val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
-        val enabled = plugins.filter {
-            runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
-        }
-        if (enabled.isEmpty()) {
-            true to "没有已启用的插件需要重载"
-        } else {
-            var ok = 0
-            enabled.forEach { plugin ->
-                runCatching { ScriptPluginRuntime.reloadPluginAsync(context, plugin.id) }.onSuccess { ok++ }
+    }
+    // 逐个重载已启用插件（每项单独可见）
+    val plugins = runCatching { ScriptPluginRuntime.listPlugins(context) }.getOrDefault(emptyList())
+    val enabled = plugins.filter {
+        runCatching { ScriptPluginRuntime.isPluginEnabled(context, it.id) }.getOrDefault(false)
+    }
+    if (enabled.isEmpty()) {
+        steps += ScriptRunStep("重新加载插件") { true to "没有已启用的插件需要重载" }
+    } else {
+        enabled.forEach { plugin ->
+            steps += ScriptRunStep("重载插件·${plugin.displayName ?: plugin.id}") {
+                runCatching { ScriptPluginRuntime.reloadPluginAsync(context, plugin.id) }
+                    .fold({ true to "已重新加载" }, { false to ("重载失败：" + it.message.orEmpty()) })
             }
-            true to "已重载 $ok/${enabled.size} 个已启用插件"
         }
-    },
-    ScriptRunStep("脚本运行库（ABI）自检") {
+    }
+    steps += ScriptRunStep("脚本运行库（ABI）自检") {
         val ok = runCatching { Class.forName("me.hd.wauxv.plugin.api.callback.PluginCallBack") }.isSuccess
         ok to (if (ok) "已加载" else "关键类缺失：插件无法加载，请更新到最新版本（无法自动修复）")
-    },
-)
+    }
+    return steps
+}
 
 /** 彻底重新初始化步骤（比重启引导更聚焦于「重建 + 重排」）。 */
 private fun scriptReinitSteps(context: Context): List<ScriptRunStep> = listOf(
@@ -485,8 +553,12 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun DiagnosticRow(label: String, value: String, warn: Boolean) {
+    val context = LocalContext.current
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showScriptInfoDialog(context, label, value + "\n\n" + scriptDiagHint(label)) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Text(
@@ -504,6 +576,27 @@ private fun DiagnosticRow(label: String, value: String, warn: Boolean) {
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/** 每行诊断点开后的说明（含义 + 处理建议）。 */
+private fun scriptDiagHint(label: String): String = when {
+    label.contains("插件总开关") ->
+        "总开关关着时任何插件都不会加载。开启后若立刻失败，多半是「微信联系人数据库尚未就绪」——看「未就绪原因」那一行。"
+    label.contains("未就绪原因") ->
+        "这是「插件总开关」打不开时最直接的卡点。显示「无（已就绪）」却仍开不了，重启微信再试；否则点「一键修复」。"
+    label.contains("数据库") ->
+        "脚本读联系人/群聊依赖微信数据库。未解析多为 DexKit 预热未完成或当前微信版本未适配。"
+    label.contains("Hook 安装任务") ->
+        "这些是靠 DexKit 解析后安装的 Hook，未装成的会让对应功能暂时失效。可在「一键修复」里重排重试。"
+    label.contains("DexKit 解析") ->
+        "显示「未初始化」说明引导链路还没跑完；点「重新初始化脚本子系统」。"
+    label.contains("插件加载错误") ->
+        "这里显示各插件最近一次加载失败的原因，反馈给开发者可快速定位。"
+    label.contains("市场服务器") ->
+        "在线插件市场服务器地址；列表拉不出来时切换官方/备用。"
+    label.contains("脚本目录") || label.contains("日志目录") ->
+        "路径存在且可读即可；不可写会导致导入/保存插件失败。"
+    else -> "该行展示脚本运行时的实时状态。"
 }
 
 /** 采集各插件最近一次加载失败原因（读插件目录 log.txt 尾部）。 */
