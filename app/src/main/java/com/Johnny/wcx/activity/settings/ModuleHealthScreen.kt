@@ -97,6 +97,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
         showOverlay: Boolean,
         reportTitle: String?,
         replaceItems: Boolean,
+        afterRun: (() -> Unit)? = null,
     ) {
         if (running) return
         if (showOverlay) {
@@ -135,6 +136,8 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
             running = false
             lastScan = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
             if (reportTitle != null) showReportDialog(context, reportTitle, collected)
+            // 运行结束（running 已置 false）后再执行收尾动作，如「修复后重新自检刷新列表」。
+            afterRun?.invoke()
         }
     }
 
@@ -143,9 +146,17 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { rescan() }
 
     fun openDetail(item: HealthItem) {
+        val detailText = "状态：" + item.value + "\n\n" + item.detail
         val builder = AlertDialog.Builder(context)
             .setTitle(item.label)
-            .setMessage("状态：" + item.value + "\n\n" + item.detail)
+            .setMessage(detailText)
+            .setNeutralButton("复制") { _, _ ->
+                runCatching {
+                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    cb?.setPrimaryClip(ClipData.newPlainText(item.label, item.label + "\n" + detailText))
+                }
+                showToast("已复制")
+            }
             .setNegativeButton("关闭", null)
         val act = item.action
         if (act != null) {
@@ -205,8 +216,13 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
                             launchRun("一键自检", { moduleHealthSteps(context) }, showOverlay = true, reportTitle = "模块自检结果", replaceItems = true)
                         }
                         InsetDivider()
-                        ActionRow("一键修复", "补脚本目录 / 开总开关 / 重建引导链路 / 推进阶段 / 重排 Hook / 重载插件 / 密友对账") {
-                            launchRun("一键修复", { moduleRepairSteps(context) }, showOverlay = true, reportTitle = "一键修复结果", replaceItems = false)
+                        ActionRow("一键修复", "补脚本目录 / 开总开关 / 重建引导链路 / 推进阶段 / 重排 Hook / 重载插件 / 密友对账；修复后自动重新自检刷新列表") {
+                            launchRun("一键修复", { moduleRepairSteps(context) }, showOverlay = true, reportTitle = "一键修复结果", replaceItems = false, afterRun = { rescan() })
+                        }
+                        InsetDivider()
+                        ActionRow("刷新检测结果", "重新逐项扫描并刷新上面的列表（不改动任何配置）") {
+                            rescan()
+                            showToast("已重新检测")
                         }
                         InsetDivider()
                         ActionRow("复制检测结果", "复制到剪贴板，便于反馈") {
@@ -337,10 +353,18 @@ private fun showReportDialog(context: Context, title: String, items: List<Health
     items.forEach { item ->
         sb.append(if (item.ok) "✅ " else "❌ ").append(item.label).append("：").append(item.value).append('\n')
     }
+    val body = sb.toString()
     runCatching {
         AlertDialog.Builder(context)
             .setTitle(title)
-            .setMessage(sb.toString())
+            .setMessage(body)
+            .setNeutralButton("复制") { _, _ ->
+                runCatching {
+                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    cb?.setPrimaryClip(ClipData.newPlainText(title, body))
+                }
+                showToast("已复制")
+            }
             .setPositiveButton("知道了", null)
             .show()
     }
