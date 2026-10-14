@@ -70,7 +70,8 @@ object QuickMarkReadRuntime {
         if (!installed.compareAndSet(false, true)) return
         prepareNativeMarkRead(context, allowDexSearch = false)
         DexInstallScheduler.schedule(
-            "${QuickMarkReadFeature.ID}:native_mark_read",
+            // WCX 未迁移 QuickMarkReadFeature（其设置页依赖 custombottombar），此处直接用其 ID 常量值。
+            "quick_mark_read:native_mark_read",
             "快捷已读原生已读入口",
             stage = DexInstallScheduler.Stage.WARMUP
         ) {
