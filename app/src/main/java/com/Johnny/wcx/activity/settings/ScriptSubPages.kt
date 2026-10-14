@@ -344,6 +344,12 @@ private fun showScriptInfoDialog(context: Context, title: String, message: Strin
         android.app.AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
+            .setNeutralButton("复制") { _, _ ->
+                runCatching {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    clipboard?.setPrimaryClip(ClipData.newPlainText(title, message))
+                }
+            }
             .setPositiveButton("知道了", null)
             .show()
     }
