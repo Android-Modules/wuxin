@@ -318,10 +318,18 @@ object VoiceForwardMiuixDialog {
                                 modifier = Modifier.padding(start = 4.dp, bottom = 10.dp)
                             )
                         }
-                        choices.forEachIndexed { index, choice ->
-                            ModeRow(choice.first, choice.second) {
-                                close()
-                                postAfterDialogClose(activity) { onSelected(index) }
+                        // 选项可能很多：限制高度并允许上下滑动，避免超出窗口后无法滚动。
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            choices.forEachIndexed { index, choice ->
+                                ModeRow(choice.first, choice.second) {
+                                    close()
+                                    postAfterDialogClose(activity) { onSelected(index) }
+                                }
                             }
                         }
                         TextButton(
@@ -667,6 +675,13 @@ object VoiceForwardMiuixDialog {
         onDismissRequest: () -> Unit,
         content: @Composable () -> Unit
     ) {
+        // 所有位置都注册返回处理：返回键 / 侧滑返回均可关闭弹窗（close 幂等）。
+        val navigationState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+        NavigationBackHandler(
+            state = navigationState,
+            isBackEnabled = show,
+            onBackCompleted = onDismissRequest
+        )
         if (position != DialogPosition.TOP) {
             WindowDialog(
                 show = show,
@@ -677,13 +692,6 @@ object VoiceForwardMiuixDialog {
             return
         }
         if (!show) return
-
-        val navigationState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
-        NavigationBackHandler(
-            state = navigationState,
-            isBackEnabled = true,
-            onBackCompleted = onDismissRequest
-        )
         val alignment = when (position) {
             DialogPosition.TOP -> Alignment.TopCenter
             DialogPosition.CENTER -> Alignment.Center

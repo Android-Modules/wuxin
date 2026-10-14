@@ -11,6 +11,8 @@ import h.Hchat.event.EventBus
 import h.Hchat.hooks.api.core.WechatApiFeature
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
+import h.Hchat.hooks.items.fakevoiceduration.FakeVoiceDurationFeature
+import h.Hchat.hooks.items.protobuf.ProtobufPacketFeature
 import h.Hchat.hooks.items.script.ScriptPluginFeature
 import h.Hchat.hooks.items.script.ScriptPluginRuntime
 import h.Hchat.preferences.ConfigStore
@@ -171,6 +173,26 @@ object HchatScriptBootstrap {
             }.onFailure {
                 status += " / ScriptPluginFeature 安装失败：" + (it.message ?: it.javaClass.simpleName)
                 WeLogger.e(TAG, "ScriptPluginFeature 安装失败", it)
+            }
+
+            // 追加安装「脚本插件 API」依赖的 Feature。与 Hchat 的 FeatureManager.installAll 一致：
+            // 先 onInit（注册设置入口），仅当启用时才 install。
+            // - ProtobufPacketFeature：脚本 sendPacket / 数据包监听；
+            // - FakeVoiceDurationFeature：伪造语音时长（未在设置中开启时，其 hook 内部自动跳过）。
+            listOf(ProtobufPacketFeature(), FakeVoiceDurationFeature()).forEach { extra ->
+                val extraName = runCatching { extra.name() }.getOrDefault(extra.javaClass.simpleName)
+                runCatching {
+                    extra.onInit(context)
+                    if (extra.isEnabled(context)) {
+                        extra.install(context)
+                        status += " / $extraName 安装成功"
+                    } else {
+                        status += " / $extraName 未启用"
+                    }
+                }.onFailure {
+                    status += " / $extraName 安装失败：" + (it.message ?: it.javaClass.simpleName)
+                    WeLogger.e(TAG, "$extraName 安装失败", it)
+                }
             }
 
             // 关键：推进调度器到 BRIDGE 阶段，触发 WechatApiFeature 注册的 warmup 任务
