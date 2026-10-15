@@ -973,7 +973,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
         return try {
             WeLogger.i(TAG, "sending location: $x,$y to $toUser")
             val locJson = """{"msg":{"location":{"poiname":"$poiName","label":"$label","x":"$x","y":"$y","scale":"$scale"}}}"""
-            val netScene = ctorNetSceneSendMsgLocation.newInstance(toUser, locJson, 1, 0, null)
+            val netScene = newSendMsgSceneInstance(ctorNetSceneSendMsgLocation.constructor, toUser, locJson)
             WeNetSceneApi.sendNetScene(netScene)
             true
         } catch (e: Exception) {
@@ -991,7 +991,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
             json2.put("nickname", nickname)
             json2.put("certflag", if (cardWxId.startsWith("gh_")) 4928270286903575946L else 4928270274018674058L)
             json1.put("msg", json2)
-            val netScene = ctorNetSceneSendMsgLocation.newInstance(toUser, json1.toString(), 1, 0, null)
+            val netScene = newSendMsgSceneInstance(ctorNetSceneSendMsgLocation.constructor, toUser, json1.toString())
             WeNetSceneApi.sendNetScene(netScene)
             true
         } catch (e: Exception) {
@@ -1169,11 +1169,42 @@ object WeMessageApi : ApiFeature(), IResolveDex {
     }
 
     /** 发送文本消息 */
+    /**
+     * 构造 NetSceneSendMsg 实例。
+     *
+     * 微信 8.0.79+ 的构造器在末尾多了一个 msgSource(String) 参数（共 6 参），
+     * 旧版为 5 参。早期实现写死 5 参，遇到 6 参宿主会抛 IllegalArgumentException
+     * 被上层 catch 后表现为「复读/发送失败」。这里按实际构造器参数个数自适应。
+     */
+    private fun newSendMsgSceneInstance(clazz: Class<*>, toUser: String, content: String): Any? {
+        val ctor = clazz.constructors.firstOrNull {
+            it.parameterCount >= 5 && it.parameterTypes[0] == String::class.java
+        } ?: clazz.constructors.firstOrNull()
+        ?: return null
+        return if (ctor.parameterCount >= 6) {
+            // 第 5 个参数在两种形态间为 long 或 Object
+            val arg4: Any? = if (ctor.parameterTypes[4] == java.lang.Long.TYPE) 0L else null
+            ctor.newInstance(toUser, content, 1, 0, arg4, null)
+        } else {
+            ctor.newInstance(toUser, content, 1, 0, null)
+        }
+    }
+
+    /** 按实际构造器参数个数自适应地构造「位置/名片」用的 NetSceneSendMsg 实例。 */
+    private fun newSendMsgSceneInstance(ctor: java.lang.reflect.Constructor<*>, toUser: String, content: String): Any {
+        return if (ctor.parameterCount >= 6) {
+            val arg4: Any? = if (ctor.parameterTypes[4] == java.lang.Long.TYPE) 0L else null
+            ctor.newInstance(toUser, content, 1, 0, arg4, null)
+        } else {
+            ctor.newInstance(toUser, content, 1, 0, null)
+        }
+    }
+
     fun sendText(toUser: String, text: String): Boolean {
         return try {
             WeLogger.i(TAG, "sending text message: $text")
             val sendMsgObject = methodGetSendMsgObject.method.invoke(null) ?: return false
-            val msgObj = classNetSceneSendMsg.clazz.createInstance(toUser, text, 1, 0, null)
+            val msgObj = newSendMsgSceneInstance(classNetSceneSendMsg.clazz, toUser, text) ?: return false
             methodPostToQueue.method.invoke(sendMsgObject, msgObj) as? Boolean ?: false
         } catch (e: Exception) {
             WeLogger.e(TAG, "failed to send text message", e)
