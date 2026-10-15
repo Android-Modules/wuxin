@@ -5,6 +5,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import com.Johnny.wcx.hooks.api.core.WeChatApis
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -195,6 +201,20 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
+
+                item { DexAdaptationOverview(
+                    moduleVersion = "${com.Johnny.wcx.BuildConfig.VERSION_NAME} (${com.Johnny.wcx.BuildConfig.VERSION_CODE})",
+                    wechatVersion = runCatching { WeChatApis.version()?.current()?.displayVersion() }.getOrNull().orEmpty(),
+                    wechatCode = runCatching { WeChatApis.version()?.current()?.versionCode }.getOrNull(),
+                    total = items.size,
+                    okCount = items.count { it.ok },
+                    badCount = items.size - items.count { it.ok },
+                    lastScan = lastScan,
+                    onRescan = { rescan() },
+                    onRepair = {
+                        launchRun("一键修复", { moduleRepairSteps(context) }, showOverlay = true, reportTitle = "一键修复结果", replaceItems = false, afterRun = { rescan() })
+                    },
+                ) }
 
                 val grouped = items.groupBy { it.section }
                 grouped.forEach { (section, list) ->
@@ -757,4 +777,117 @@ private fun collectPluginLoadErrors(context: Context): List<String> {
             message?.takeIf { it.isNotBlank() }?.let { "${plugin.displayName ?: plugin.id}: $it" }
         }
     }.getOrDefault(emptyList())
+}
+
+// ---------------------------------------------------------------------------
+//  DEX 适配风格总览（顶部大圆角卡片）
+// ---------------------------------------------------------------------------
+@Composable
+private fun DexAdaptationOverview(
+    moduleVersion: String,
+    wechatVersion: String,
+    wechatCode: Int?,
+    total: Int,
+    okCount: Int,
+    badCount: Int,
+    lastScan: String,
+    onRescan: () -> Unit,
+    onRepair: () -> Unit
+) {
+    val primary = MiuixTheme.colorScheme.primary
+    val onSurface = MiuixTheme.colorScheme.onSurface
+    val onSurfaceVar = MiuixTheme.colorScheme.onSurfaceVariantSummary
+    val surface = MiuixTheme.colorScheme.surface
+    val surfaceVar = MiuixTheme.colorScheme.secondaryVariant
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(surface)
+            .border(1.dp, surfaceVar, RoundedCornerShape(24.dp))
+            .padding(20.dp)
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("DEX 适配", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = onSurface)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (badCount == 0) "通过" else "需修复",
+                    fontSize = 13.sp, color = primary, fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = if (badCount == 0) "适配检查完成" else "存在 " + badCount + " 项缺失",
+                fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                color = if (badCount == 0) onSurface else primary
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "已检查 " + total + " 项，通过 " + okCount + "，异常 " + badCount,
+                fontSize = 14.sp, color = onSurfaceVar
+            )
+            Spacer(Modifier.height(16.dp))
+            Text("模块版本：" + moduleVersion, fontSize = 13.sp, color = onSurfaceVar)
+            Text("当前微信：" + wechatVersion, fontSize = 13.sp, color = onSurfaceVar)
+            if (wechatCode != null) Text("内部版本：" + wechatCode, fontSize = 13.sp, color = onSurfaceVar)
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(primary.copy(alpha = 0.25f)))
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DexStatCell("已检查", total.toString(), Modifier.weight(1f))
+                DexStatCell("通过", okCount.toString(), Modifier.weight(1f))
+                DexStatCell("异常", badCount.toString(), Modifier.weight(1f))
+                DexStatCell("耗时", "—", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "检查通过表示底层接口可用，不等于所有使用场景已验证。",
+                fontSize = 12.sp, color = onSurfaceVar,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
+            val mainLabel = if (badCount > 0) "一键修复" else "重新检测"
+            val mainAction = if (badCount > 0) onRepair else onRescan
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(if (badCount > 0) primary else surfaceVar)
+                    .clickable { mainAction() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    mainLabel,
+                    color = if (badCount > 0) Color.White else onSurface,
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "最后检测：" + lastScan,
+                fontSize = 11.sp, color = onSurfaceVar,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End
+            )
+        }
+    }
+}
+
+@Composable
+private fun DexStatCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MiuixTheme.colorScheme.secondaryVariant)
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, fontSize = 11.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            Spacer(Modifier.height(4.dp))
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+        }
+    }
 }
