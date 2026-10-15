@@ -296,6 +296,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
                     }
                 }
 
+                item { DiagnosticLogCard(context) }
                 item {
                     Text(
                         text = "说明：本页是「全量自检」——覆盖微信公共 API、脚本运行时、Hook 安装任务、关键类锚点、密友状态与各分类启用情况。" +
