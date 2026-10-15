@@ -742,10 +742,19 @@ public class DexFinder {
                     }, "sendTextMsg", false));
 
             for (Class<?> cl : candidates) {
+                // 微信 8.0.79+ 构造器尾部多一个 msgSource(String) 参数：先按 6 参匹配，再回落 5 参。
                 Constructor<?> longCtor = findCtorByExactTypes(
                         cl, String.class, String.class, int.class, int.class, long.class);
+                if (longCtor == null) {
+                    longCtor = findCtorByExactTypes(
+                            cl, String.class, String.class, int.class, int.class, long.class, String.class);
+                }
                 Constructor<?> objectCtor = findCtorByExactTypes(
                         cl, String.class, String.class, int.class, int.class, Object.class);
+                if (objectCtor == null) {
+                    objectCtor = findCtorByExactTypes(
+                            cl, String.class, String.class, int.class, int.class, Object.class, String.class);
+                }
                 if (longCtor != null || objectCtor != null) {
                     sendTextMsgClass = cl;
                     sendTextMsgCtorLong = longCtor;
@@ -3687,8 +3696,16 @@ public class DexFinder {
             wishWxHbCtor = findCtorByArgCount(wishWxHbClass, 4);
             sendTextMsgCtorLong = findCtorByExactTypes(
                     sendTextMsgClass, String.class, String.class, int.class, int.class, long.class);
+            if (sendTextMsgCtorLong == null) {
+                sendTextMsgCtorLong = findCtorByExactTypes(
+                        sendTextMsgClass, String.class, String.class, int.class, int.class, long.class, String.class);
+            }
             sendTextMsgCtorObject = findCtorByExactTypes(
                     sendTextMsgClass, String.class, String.class, int.class, int.class, Object.class);
+            if (sendTextMsgCtorObject == null) {
+                sendTextMsgCtorObject = findCtorByExactTypes(
+                        sendTextMsgClass, String.class, String.class, int.class, int.class, Object.class, String.class);
+            }
             if (localMessageClass == null && localMessageInsertMethod != null
                     && localMessageInsertMethod.getParameterTypes().length == 1) {
                 localMessageClass = localMessageInsertMethod.getParameterTypes()[0];
