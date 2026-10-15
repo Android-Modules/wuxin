@@ -33,7 +33,6 @@ import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import kotlin.io.path.exists
-import kotlin.io.path.fileName
 import kotlin.io.path.readLines
 
 /**
