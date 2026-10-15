@@ -502,6 +502,7 @@ fun ScriptDiagnosticsScreen(onBack: () -> Unit) {
                         }
                     }
                 }
+                item { DiagnosticLogCard(context) }
                 item {
                     Text(
                         text = "提示：脚本依赖微信公共 API（DexKit 解析数据库/账号/消息等）。" +
