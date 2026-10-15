@@ -7,7 +7,6 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.clickable
@@ -1029,6 +1028,27 @@ private fun DexScriptOverview(
                 fontSize = 11.sp, color = onSurfaceVar,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End
             )
+        }
+    }
+}
+
+
+/** DEX 适配风 4 格统计网格单格（脚本诊断页）。 */
+@Composable
+private fun DexStatCell(label: String, value: String, modifier: Modifier = Modifier) {
+    val onSurface = MiuixTheme.colorScheme.onSurface
+    val onSurfaceVar = MiuixTheme.colorScheme.onSurfaceVariantSummary
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MiuixTheme.colorScheme.secondaryVariant.copy(alpha = 0.6f))
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(text = label, fontSize = 12.sp, color = onSurfaceVar)
         }
     }
 }
