@@ -1305,8 +1305,14 @@ public class DexFinder {
                 return;
             }
 
+            // 微信 8.0.79 起日志文案带后缀，完整串为 "attachFilePath[%s], content[%s]"；
+            // DexKit 按字符串常量精确匹配，故优先用完整新串，找不到再回落旧串（兼容旧版微信）。
             List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("summerbig sendAppMsg attachFilePath"));
+                    mkMethodUsingStrings("summerbig sendAppMsg attachFilePath[%s], content[%s]"));
+            if (methods == null || methods.isEmpty()) {
+                methods = dexKit.findMethod(
+                        mkMethodUsingStrings("summerbig sendAppMsg attachFilePath"));
+            }
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -4147,7 +4153,7 @@ public class DexFinder {
         if (!"android.util.Pair".equals(method.getReturnType().getName())) return false;
         if (!KavaReflector.isStatic(method)) return false;
         Class<?>[] params = method.getParameterTypes();
-        if (params.length != 10 && params.length != 12) return false;
+        if (params.length != 10 && params.length != 12 && params.length != 13) return false;
         if (params[0].isPrimitive()) return false;
         return params[1] == String.class
                 && params[2] == String.class
@@ -4161,7 +4167,14 @@ public class DexFinder {
                 || (params.length == 12
                 && !params[9].isPrimitive()
                 && (params[10] == boolean.class || params[10] == Boolean.class)
-                && params[11] == String.class));
+                && params[11] == String.class)
+                // 微信 8.0.79+: 在 12 参基础上末尾再加一个 String 参数（
+                // com.tencent.mm.pluginsdk.model.app.k0.M）。
+                || (params.length == 13
+                && !params[9].isPrimitive()
+                && (params[10] == boolean.class || params[10] == Boolean.class)
+                && params[11] == String.class
+                && params[12] == String.class));
     }
 
     private boolean isAppMsgParseMethod(Method method, Class<?> appMsgClass) {
