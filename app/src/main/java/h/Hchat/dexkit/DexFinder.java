@@ -423,13 +423,13 @@ public class DexFinder {
         try {
             // 策略1: 搜索 "dkAddMsg" (OR 搜索，不同时要求两个字符串)
             List<MethodData> methods1 = dexKit.findMethod(
-                    mkMethodUsingStrings("dkAddMsg"));
+                    mkMethodUsingStrings("dkAddMsg from:%s to:%s id:[%d,%d,%d] status:%d type:%d time:[%d %s] diff:%d imgstatus:%d imgbuf:%d src:%d push:%d content:%s flag:%s"));
             collectMethodOwnerClass(methods1, addMsgClasses);
 
             // 策略2: 搜索 "processAddMsg"
             if (addMsgClasses.isEmpty()) {
                 List<MethodData> methods2 = dexKit.findMethod(
-                        mkMethodUsingStrings("processAddMsg"));
+                        mkMethodUsingStrings("processAddMsg insert db error"));
                 collectMethodOwnerClass(methods2, addMsgClasses);
             }
 
@@ -620,7 +620,7 @@ public class DexFinder {
 
             // 策略1: 搜索 doSceneImp 字符串，找到包含 dispatch 方法的类
             List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("doSceneImp"));
+                    mkMethodUsingStrings("doSceneImp runningQueue Type:"));
             if (netQueueClass == null) {
                 for (MethodData m : methods) {
                     try {
@@ -847,7 +847,7 @@ public class DexFinder {
             }
 
             List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("sendImg: args error"));
+                    mkMethodUsingStrings("sendImg: args error, toUser[%s], fileName[%s]"));
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -1423,7 +1423,7 @@ public class DexFinder {
             if (sendVideoMethod != null) return;
 
             List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("send vedio args error"));
+                    mkMethodUsingStrings("send vedio args error, toUser[%s] fileName[%s]"));
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -1602,7 +1602,7 @@ public class DexFinder {
 
             if (voiceFullPathMethod == null) {
                 List<MethodData> methods = dexKit.findMethod(
-                        mkMethodUsingStrings("getAmrFullPath cost:"));
+                        mkMethodUsingStrings("getAmrFullPath cost: "));
                 for (MethodData methodData : methods) {
                     try {
                         Method method = methodData.getMethodInstance(classLoader);
@@ -1802,7 +1802,7 @@ public class DexFinder {
         try {
             if (emojiSendMethod == null) {
                 List<MethodData> methods = dexKit.findMethod(
-                        mkMethodUsingStrings("NetSceneUploadEmoji: msgId"));
+                        mkMethodUsingStrings("NetSceneUploadEmoji: msgId = %s, md5 %s, len %s"));
                 for (MethodData methodData : methods) {
                     try {
                         Method method = methodData.getMethodInstance(classLoader);
@@ -1816,7 +1816,7 @@ public class DexFinder {
 
             if (emojiManagerSendMethod == null) {
                 List<MethodData> methods = dexKit.findMethod(
-                        mkMethodUsingStrings("sendEmoji: context is null", "sendEmoji: emoji not found"));
+                        mkMethodUsingStrings("sendEmoji: context is null", "sendEmoji: emoji not found, imgPath %s"));
                 for (MethodData methodData : methods) {
                     try {
                         Method method = methodData.getMethodInstance(classLoader);
@@ -2382,7 +2382,7 @@ public class DexFinder {
             if (isContactCardXmlMethod(contactCardXmlMethod)) return;
 
             List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("MicroMsg.SendContactCardHelper", "getBizNameCardString"));
+                    mkMethodUsingStrings("MicroMsg.SendContactCardHelper", "getBizNameCardString buffer size: "));
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -2416,7 +2416,7 @@ public class DexFinder {
             if (!isPatDisplayTemplateMethod(patDisplayTemplateMethod)) {
                 List<MethodData> methods = dexKit.findMethod(
                         mkMethodUsingStrings("MicroMsg.PluginPatMsg",
-                                "parseDisplayTemplate realtime templateStr:%s"));
+                                "parseDisplayTemplate realtime templateStr:%s "));
                 for (MethodData methodData : methods) {
                     try {
                         Method method = methodData.getMethodInstance(classLoader);
@@ -2853,7 +2853,7 @@ public class DexFinder {
         Class<?> contactType = mute.getParameterTypes()[0];
         List<Method> invokes = new ArrayList<>();
         for (MethodData data : dexKit.findMethod(
-                mkMethodUsingStrings("setMute contact invalid username"))) {
+                mkMethodUsingStrings("setMute contact invalid username: %s, contactId: %s"))) {
             try {
                 Method candidate = data.getMethodInstance(classLoader);
                 if (!mute.equals(candidate)) continue;
@@ -3043,7 +3043,7 @@ public class DexFinder {
                             "will insert sysmsg from:",
                             "content null, cannot to insert sysmsg!",
                             "failed to insert sysmsg",
-                            "sysmsg inserted"));
+                            "sysmsg inserted: "));
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -4657,7 +4657,7 @@ public class DexFinder {
     private Method findSnsCommitMethod(Class<?> helperClass) {
         if (helperClass == null) return null;
         try {
-            List<MethodData> methods = dexKit.findMethod(mkMethodUsingStrings("commit sns info ret %d"));
+            List<MethodData> methods = dexKit.findMethod(mkMethodUsingStrings("commit sns info ret %d, typeFlag %d sightMd5 %s"));
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -5515,7 +5515,7 @@ public class DexFinder {
             return;
         }
         try {
-            for (MethodData md : dexKit.findMethod(mkMethodUsingStrings("updateGiftMsgByCgi"))) {
+            for (MethodData md : dexKit.findMethod(mkMethodUsingStrings("updateGiftMsgByCgi, giftMsgId:"))) {
                 Class<?> task = KavaReflector.loadClass(md.getClassName(), classLoader);
                 if (task == null) continue;
                 for (Constructor<?> ctor : KavaReflector.declaredConstructors(task)) {

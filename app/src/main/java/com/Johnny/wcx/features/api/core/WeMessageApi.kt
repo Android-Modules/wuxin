@@ -106,7 +106,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
             methods {
                 add {
                     paramCount = 2
-                    usingStrings("worker thread has not been se", "MicroMsg.NetSceneQueue")
+                    usingStrings("worker thread has not been set", "MicroMsg.NetSceneQueue")
                 }
             }
         }
@@ -300,7 +300,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
     }
     private val classVfs by dexClass {
         matcher {
-            usingStrings("MicroMsg.VFSFileOp", "Cannot resolve path or URI")
+            usingStrings("MicroMsg.VFSFileOp", "Cannot resolve path or URI: ")
         }
     }
     private val classPathUtil by dexClass {
@@ -323,7 +323,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
     }
     private val classMmKernel by dexClass {
         matcher {
-            usingStrings("MicroMsg.MMKernel", "Initialize skeleton")
+            usingStrings("MicroMsg.MMKernel", "Initialize skeleton, create whole world.")
         }
     }
     private val methodMmKernelGetStorage by dexMethod(allowMultiple = true) {

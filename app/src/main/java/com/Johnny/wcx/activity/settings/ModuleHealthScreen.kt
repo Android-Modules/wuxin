@@ -86,6 +86,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
 
     var items by remember { mutableStateOf(listOf<HealthItem>()) }
     var lastScan by remember { mutableStateOf("尚未检测") }
+    var scanDurationMs by remember { mutableStateOf(0L) }
     var running by remember { mutableStateOf(false) }
     var runTitle by remember { mutableStateOf("") }
     var runProgress by remember { mutableFloatStateOf(0f) }
@@ -109,6 +110,7 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
             runLog = emptyList()
         }
         scope.launch {
+            val startedAt = System.currentTimeMillis()
             val steps = runCatching { stepsProvider() }.getOrElse { emptyList() }
             val collected = mutableListOf<HealthItem>()
             steps.forEachIndexed { index, step ->
@@ -136,15 +138,40 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
             if (replaceItems) items = collected
             running = false
             lastScan = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            if (replaceItems) scanDurationMs = System.currentTimeMillis() - startedAt
             if (reportTitle != null) showReportDialog(context, reportTitle, collected)
             // 运行结束（running 已置 false）后再执行收尾动作，如「修复后重新自检刷新列表」。
             afterRun?.invoke()
         }
     }
 
-    fun rescan() = launchRun("模块自检", { moduleHealthSteps(context) }, showOverlay = false, reportTitle = null, replaceItems = true)
+    fun rescan() = launchRun("模块自检", { moduleHealthSteps(context) }, showOverlay = true, reportTitle = null, replaceItems = true)
 
     LaunchedEffect(Unit) { rescan() }
+
+    fun showFilteredList(title: String, list: List<HealthItem>) {
+        if (list.isEmpty()) {
+            showToast("没有符合条件的项")
+            return
+        }
+        val text = buildString {
+            append("共 ").append(list.size).append(" 项：\n\n")
+            list.forEach { append(if (it.ok) "✅ " else "❌ ").append(it.label)
+                .append("\t").append(it.value).append("\n") }
+        }
+        AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(text)
+            .setNeutralButton("复制") { _, _ ->
+                runCatching {
+                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    cb?.setPrimaryClip(ClipData.newPlainText(title, text))
+                }
+                showToast("已复制")
+            }
+            .setNegativeButton("关闭", null)
+            .show()
+    }
 
     fun openDetail(item: HealthItem) {
         val detailText = "状态：" + item.value + "\n\n" + item.detail
@@ -208,6 +235,14 @@ fun ModuleHealthScreen(onBack: () -> Unit) {
                         }.getOrDefault("未识别"),
                         internalVersion = "${BuildConfig.VERSION_CODE}",
                         lastScan = lastScan,
+                        scanDurationMs = scanDurationMs,
+                        onShowList = { kind ->
+                            when (kind) {
+                                "pass" -> showFilteredList("通过项", items.filter { it.ok })
+                                "fail" -> showFilteredList("异常项", items.filter { !it.ok })
+                                else -> showFilteredList("全部检测项", items)
+                            }
+                        },
                         onRescan = { rescan() },
                         onRepair = {
                             launchRun(
@@ -343,6 +378,8 @@ private fun OverviewHealthCard(
     wechatVersion: String,
     internalVersion: String,
     lastScan: String,
+    scanDurationMs: Long = 0L,
+    onShowList: (String) -> Unit = {},
     onRescan: () -> Unit,
     onRepair: () -> Unit,
 ) {
@@ -415,10 +452,10 @@ private fun OverviewHealthCard(
             Spacer(Modifier.height(16.dp))
             // 4 格统计网格
             Row(modifier = Modifier.fillMaxWidth()) {
-                StatCell("耗时", lastScan, chipBg, title, muted, Modifier.weight(1f).padding(end = 6.dp))
-                StatCell("通过", pass.toString(), chipBg, title, muted, Modifier.weight(1f).padding(horizontal = 3.dp))
-                StatCell("异常", fail.toString(), chipBg, title, muted, Modifier.weight(1f).padding(horizontal = 3.dp))
-                StatCell("待验证", todo.toString(), chipBg, title, muted, Modifier.weight(1f).padding(start = 6.dp))
+                StatCell("耗时", formatDuration(scanDurationMs), chipBg, title, muted, Modifier.weight(1f).padding(end = 6.dp))
+                StatCell("通过", pass.toString(), chipBg, title, muted, Modifier.weight(1f).padding(horizontal = 3.dp), onClick = { onShowList("pass") })
+                StatCell("异常", fail.toString(), chipBg, title, muted, Modifier.weight(1f).padding(horizontal = 3.dp), onClick = { onShowList("fail") })
+                StatCell("待验证", todo.toString(), chipBg, title, muted, Modifier.weight(1f).padding(start = 6.dp), onClick = { onShowList("all") })
             }
             Spacer(Modifier.height(12.dp))
             // 提示语
@@ -467,6 +504,13 @@ private fun OverviewHealthCard(
     }
 }
 
+/** 把毫秒格式化为「1.2s」/「350ms」。 */
+private fun formatDuration(ms: Long): String = when {
+    ms <= 0L -> "—"
+    ms < 1000L -> "${ms}ms"
+    else -> String.format(Locale.getDefault(), "%.1fs", ms / 1000.0)
+}
+
 /** 4 格统计网格中每个格子的内部渲染。 */
 @Composable
 private fun StatCell(
@@ -476,12 +520,14 @@ private fun StatCell(
     valueColor: Color,
     labelColor: Color,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier = modifier
             .height(64.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(bg),
+            .background(bg)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -597,7 +643,14 @@ private fun featureOverview(): List<HealthItem> {
         .forEach { (category, list) ->
             val on = list.count { WePrefs.getBoolOrFalse(it.name) }
             val detail = buildString {
-                append("该分类共 ${list.size} 个功能，当前已启用 $on 个。")
+                append("该分类共 ${list.size} 个功能，当前已启用 $on 个。\n\n")
+                list.forEach { item ->
+                    val enabled = WePrefs.getBoolOrFalse(item.name)
+                    append(if (enabled) "✅ " else "⬜ ")
+                        .append(item.name)
+                        .append(if (enabled) "" else "（未启用）")
+                        .append("\n")
+                }
                 if (on == 0) append("\n该分类目前没有任何功能被启用——若你期望其中某功能生效，请到「功能」页对应分类手动开启。")
             }
             out += HealthItem("分类·$category", "功能清单与分类启用概况", "${list.size} 个，已启用 $on", true, detail)
