@@ -6,7 +6,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import com.Johnny.wcx.utils.HostInfo
 import h.Hchat.preferences.HchatStorage
-import h.Hchat.utils.HLog
+import com.Johnny.wcx.utils.WeLogger
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -122,7 +122,7 @@ object DexFeaturePack {
         }
         if (!applied) {
             lastStatus = if (payload != null) "远程更新失败，沿用本地缓存" else "远程更新失败（无可用特征包）"
-            HLog.i(TAG, lastStatus)
+            WeLogger.i(TAG, lastStatus)
         }
     }
 
@@ -140,13 +140,13 @@ object DexFeaturePack {
             }
             val code = conn.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
-                HLog.i(TAG, "拉取失败 HTTP $code: $url")
+                WeLogger.i(TAG, "拉取失败 HTTP $code: $url")
                 return null
             }
             input = conn.inputStream
             readLimited(input, MAX_BYTES)
         } catch (t: Throwable) {
-            HLog.i(TAG, "拉取异常: " + (t.message ?: t.javaClass.simpleName))
+            WeLogger.i(TAG, "拉取异常: " + (t.message ?: t.javaClass.simpleName))
             null
         } finally {
             runCatching { input?.close() }
@@ -200,7 +200,7 @@ object DexFeaturePack {
                 ?.putString(KEY_FETCH_AT, fetchedAt)
                 ?.apply()
         }
-        HLog.i(TAG, lastStatus)
+        WeLogger.i(TAG, lastStatus)
         return true
     }
 
