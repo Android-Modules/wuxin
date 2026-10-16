@@ -1177,27 +1177,81 @@ object WeMessageApi : ApiFeature(), IResolveDex {
      * 被上层 catch 后表现为「复读/发送失败」。这里按实际构造器参数个数自适应。
      */
     private fun newSendMsgSceneInstance(clazz: Class<*>, toUser: String, content: String): Any? {
-        val ctor = clazz.constructors.firstOrNull {
-            it.parameterCount >= 5 && it.parameterTypes[0] == String::class.java
-        } ?: clazz.constructors.firstOrNull()
-        ?: return null
-        return if (ctor.parameterCount >= 6) {
-            // 第 5 个参数在两种形态间为 long 或 Object
-            val arg4: Any? = if (ctor.parameterTypes[4] == java.lang.Long.TYPE) 0L else null
-            ctor.newInstance(toUser, content, 1, 0, arg4, null)
-        } else {
-            ctor.newInstance(toUser, content, 1, 0, null)
+        // 微信 8.0.79 的 NetSceneSendMsg 只有 ()V、(J I String)V 以及两个 6 参构造器，
+        // 早期写死的 5 参调用会直接抛「找不到构造器」。这里按「首参为 String」过滤后
+        // 从参数多到少逐个尝试，任一成功即返回，避免依赖构造器的反射顺序。
+        val filtered = clazz.constructors
+            .filter { it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == String::class.java }
+            .sortedByDescending { it.parameterCount }
+        val candidates = if (filtered.isNotEmpty()) filtered else clazz.constructors.toList()
+        for (ctor in candidates) {
+            val args = buildSendMsgCtorArgs(ctor, toUser, content) ?: continue
+            val obj = runCatching { ctor.newInstance(*args) }.getOrElse {
+                WeLogger.w(TAG, "NetSceneSendMsg 构造失败(${ctor.toGenericString()}): ${it.message}")
+                null
+            }
+            if (obj != null) return obj
         }
+        WeLogger.e(
+            TAG,
+            "未找到可用的 NetSceneSendMsg 构造器；候选=" +
+                clazz.constructors.joinToString(" | ") { it.toGenericString() },
+        )
+        return null
     }
 
     /** 按实际构造器参数个数自适应地构造「位置/名片」用的 NetSceneSendMsg 实例。 */
     private fun newSendMsgSceneInstance(ctor: java.lang.reflect.Constructor<*>, toUser: String, content: String): Any {
-        return if (ctor.parameterCount >= 6) {
-            val arg4: Any? = if (ctor.parameterTypes[4] == java.lang.Long.TYPE) 0L else null
-            ctor.newInstance(toUser, content, 1, 0, arg4, null)
-        } else {
-            ctor.newInstance(toUser, content, 1, 0, null)
+        val args = buildSendMsgCtorArgs(ctor, toUser, content)
+            ?: error("unsupported NetSceneSendMsg constructor: ${ctor.toGenericString()}")
+        return ctor.newInstance(*args)
+    }
+
+    /**
+     * 依据构造器的真实形参类型构造实参，兼容微信 8.0.79 的 6 参形态
+     * (String,String,int,int,long|Object,String) 与旧版 5 参形态。
+     */
+    private fun buildSendMsgCtorArgs(
+        ctor: java.lang.reflect.Constructor<*>,
+        toUser: String,
+        content: String,
+    ): Array<Any?>? {
+        val types = ctor.parameterTypes
+        if (types.size < 5) return null
+        val args = arrayOfNulls<Any?>(types.size)
+        for (i in types.indices) {
+            val t = types[i]
+            args[i] = when {
+                t == String::class.java -> when (i) {
+                    0 -> toUser
+                    1 -> content
+                    else -> null
+                }
+                t == java.lang.Integer.TYPE || t == java.lang.Integer::class.java -> if (i == 2) 1 else 0
+                t == java.lang.Long.TYPE || t == java.lang.Long::class.java -> 0L
+                t == java.lang.Boolean.TYPE || t == java.lang.Boolean::class.java -> false
+                t == java.lang.Byte.TYPE || t == java.lang.Byte::class.java -> 0.toByte()
+                t == java.lang.Character.TYPE || t == java.lang.Character::class.java -> '\u0000'
+                else -> null
+            }
         }
+        return args
+    }
+
+    /** 供诊断页展示：发送文本（NetSceneSendMsg）类定位与构造器自检结果。 */
+    fun sendTextDiagnostics(): String {
+        return runCatching {
+            val clazz = classNetSceneSendMsg.clazz
+            val ctors = clazz.constructors.joinToString(" / ") { c ->
+                "(" + c.parameterTypes.joinToString(",") { it.simpleName } + ")"
+            }
+            val usable = clazz.constructors.any {
+                it.parameterCount >= 5 && it.parameterTypes.isNotEmpty() &&
+                    it.parameterTypes[0] == String::class.java
+            }
+            val state = if (usable) "是" else "✗ 否（无可用构造器）"
+            "类=${clazz.name}｜构造器=[$ctors]｜可发送=$state"
+        }.getOrElse { "✗ 未解析（${it.javaClass.simpleName}: ${it.message}）" }
     }
 
     fun sendText(toUser: String, text: String): Boolean {
