@@ -991,8 +991,7 @@ object ConversationAggregation : ClickableFeature(),
             if (suppressQueryRewrite.get()!!) return@hookBefore
             val sql = args.firstOrNull() as? String ?: return@hookBefore
             if (sql.contains("rconversation") && (sql.contains("update", true) || sql.contains("unread", true))) {
-                WeLogger.i(TAG, "rawQuery: $sql")
-                diagFile("rawQuery: $sql")
+                WeLogger.d(TAG, "rawQuery: $sql")
             }
             onQuery(sql)?.let { args[0] = it }
         }
@@ -1145,8 +1144,7 @@ object ConversationAggregation : ClickableFeature(),
             tf.set(tv, spannable)
             tv.invalidate()
             tv.requestLayout()
-            diagFile("setTextSpanDirect applied: ${tv.javaClass.name}")
-        }.onFailure { diagFile("setTextSpanDirect FAILED: $it") }
+        }.onFailure { WeLogger.w(TAG, "setTextSpanDirect failed", it) }
     }
 
     /**
@@ -1409,6 +1407,8 @@ object ConversationAggregation : ClickableFeature(),
     }
 
     private fun diagFile(msg: String) {
+        // 仅调试构建落盘：release 下这是纯 IO 开销（会话列表每绑定一项都会走到这里）。
+        if (!com.Johnny.wcx.BuildConfig.DEBUG) return
         runCatching {
             val f = java.io.File("/sdcard/Android/data/com.tencent.mm/WCX/diag.log")
             f.parentFile?.mkdirs()
@@ -1524,13 +1524,9 @@ object ConversationAggregation : ClickableFeature(),
             holder.javaClass.getMethod("getItemView").invoke(holder) as? View
         }.getOrNull() ?: return
         val root = itemView as? ViewGroup ?: return
-        WeLogger.i(TAG, "bindViewHolder fired: root=${root.javaClass.simpleName} children=${root.childCount}")
-        diagFile("bindViewHolder fired: ${root.javaClass.simpleName} children=${root.childCount}")
         tintMentionLabels(root, "bind")
         markVirtualRow(root)
         root.post {
-            WeLogger.i(TAG, "bindViewHolder post fired: root=${root.javaClass.simpleName}")
-        diagFile("bindViewHolder post fired: ${root.javaClass.simpleName}")
             tintMentionLabels(root, "post")
             markVirtualRow(root)
         }
@@ -1601,8 +1597,7 @@ object ConversationAggregation : ClickableFeature(),
                     val sql = args?.getOrNull(0) as? String ?: return@hookBeforeDirectly
                     val low = sql.lowercase()
                     if (low.contains("rconversation") && (low.contains("update") || low.contains("unread"))) {
-                        WeLogger.i(TAG, "execSQL: $sql")
-                        diagFile("execSQL: $sql")
+                        WeLogger.d(TAG, "execSQL: $sql")
                     }
                 }
             WeLogger.i(TAG, "execSQL hook registered")
