@@ -1945,7 +1945,7 @@ object WeMessageApi : ApiFeature(), IResolveDex {
             }
 
             val result = m.invoke(downloadService, imgLocalId, msgIdTalker, 0, null, 0, listener, -1, false)
-            WeLogger.i(TAG, "triggerDownload result=$result")
+            WeLogger.d(TAG, "triggerDownload result=$result")
             (result as? Int)?.let { it >= 0 } ?: false
         } catch (e: Exception) {
             WeLogger.e(TAG, "triggerDownload failed", e)
