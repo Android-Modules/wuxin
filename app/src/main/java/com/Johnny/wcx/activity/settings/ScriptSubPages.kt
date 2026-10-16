@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.outlined.Arrow_back
+import com.Johnny.wcx.features.api.core.WeMessageApi
 import com.Johnny.wcx.features.hchat.HchatScriptBootstrap
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.TargetProcesses
@@ -752,6 +753,9 @@ private fun collectScriptDiagnostics(context: Context): List<Pair<String, String
     tasks.filter { !it.installed }.take(10).forEach { task ->
         rows += ("      · " + task.label) to task.summary
     }
+
+    // —— 消息发送链路（复读 / 发送文本依赖的构造器自检）——
+    rows += "发送文本 API" to runCatching { WeMessageApi.sendTextDiagnostics() }.getOrDefault("未知")
 
     // —— 各插件最近一次加载失败原因 ——
     val pluginLoadErrors = collectPluginLoadErrors(context)
