@@ -97,9 +97,13 @@ fun DiagnosticLogCard(
         InsetDivider()
         ActionRow(
             "复制完整日志",
-            "复制最近 ${recent.size} 行原始运行日志",
+            "复制最近 ${recent.size} 行原始运行日志（超长自动截断）",
         ) {
-            copyLogToClipboard(context, recent.joinToString("\n"), "完整日志")
+            val full = recent.joinToString("\n")
+            val capped = if (full.length > MAX_LOG_COPY_CHARS) {
+                full.take(MAX_LOG_COPY_CHARS) + "\n…（已截断，完整内容见日志文件）"
+            } else full
+            copyLogToClipboard(context, capped, "完整日志")
         }
 
         val preview = if (onlyProblems) buildProblemLines(d) else recent
@@ -124,6 +128,9 @@ fun DiagnosticLogCard(
         }
     }
 }
+
+/** 单次复制上限：手机输入法/剪贴板可承受的长度，避免「复制不全」。 */
+private const val MAX_LOG_COPY_CHARS = 8000
 
 private fun buildProblemLines(d: WeLogger.LogDigest?): List<String> {
     if (d == null) return emptyList()
