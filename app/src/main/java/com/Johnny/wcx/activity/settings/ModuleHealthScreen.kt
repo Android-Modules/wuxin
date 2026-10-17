@@ -43,6 +43,7 @@ import com.Johnny.wcx.features.items.secret_friend.SecretFriendDiagnostics
 import com.Johnny.wcx.features.items.secret_friend.SecretFriendState
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.android.showToast
+import com.Johnny.wcx.utils.crash.ExitReasonRecorder
 import com.Johnny.wcx.BuildConfig
 import com.Johnny.wcx.utils.reflection.ClassLoaders
 import h.Hchat.hooks.api.core.WeChatApis
@@ -655,7 +656,36 @@ private fun moduleHealthSteps(context: Context): List<HealthStep> = listOf(
     HealthStep("Hook 安装任务与就绪阶段") { hookTasks() },
     HealthStep("关键类锚点") { anchors() },
     HealthStep("密友功能") { secretFriendSection() },
+    HealthStep("上次退出原因") { lastExitItems(context) },
 )
+
+/**
+ * 「上次进程退出原因」——用来区分是系统内存回收、崩溃、ANR 还是用户强行停止。
+ * 这段信息是判断「模块有没有主动杀微信」的直接依据。
+ */
+private fun lastExitItems(context: Context): List<HealthItem> {
+    val summary = runCatching { ExitReasonRecorder.summary(context) }.getOrNull()
+    return listOf(
+        HealthItem(
+            "上次进程退出",
+            "运行状态",
+            summary ?: "无记录",
+            true,
+            if (summary == null) {
+                "Android 11 起系统会记录进程退出原因（内存不足回收 / Java 或原生崩溃 / ANR / 用户强行停止 等）。\n" +
+                    "当前还没有可用记录（首次安装、系统版本过低或系统未提供）。"
+            } else {
+                "最近一次微信进程退出的原因：$summary\n\n" +
+                    "· LOW_MEMORY = 系统内存不足回收（模块占用高时更容易触发）\n" +
+                    "· CRASH / CRASH_NATIVE = Java 或原生崩溃\n" +
+                    "· ANR = 无响应被系统结束\n" +
+                    "· USER_REQUESTED = 用户手动强行停止\n" +
+                    "· EXIT_SELF = 进程自己退出\n" +
+                    "以上都属于系统/进程侧行为，模块本身不会主动杀死微信。"
+            },
+        )
+    )
+}
 
 /** 「一键修复」动作（重建引导链路），供多处复用。 */
 private fun repairAction(context: Context): Pair<String, () -> String> =
