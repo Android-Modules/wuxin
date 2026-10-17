@@ -44,6 +44,7 @@ import com.Johnny.wcx.features.items.secret_friend.SecretFriendState
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.crash.ExitReasonRecorder
+import com.Johnny.wcx.utils.MainThreadWatchdog
 import com.Johnny.wcx.utils.crash.ProcessTimeline
 import com.Johnny.wcx.BuildConfig
 import com.Johnny.wcx.utils.reflection.ClassLoaders
@@ -657,7 +658,7 @@ private fun moduleHealthSteps(context: Context): List<HealthStep> = listOf(
     HealthStep("Hook 安装任务与就绪阶段") { hookTasks() },
     HealthStep("关键类锚点") { anchors() },
     HealthStep("密友功能") { secretFriendSection() },
-    HealthStep("上次退出原因") { lastExitItems(context) },
+    HealthStep("退出原因与主线程卡顿") { lastExitItems(context) },
 )
 
 /**
@@ -698,6 +699,18 @@ private fun lastExitItems(context: Context): List<HealthItem> {
             recent.first(),
             true,
             recent.joinToString("\n"),
+        )
+    }
+
+    // 主线程卡顿：ANR 的直接来源，记录卡住时主线程在跑谁。
+    val janks = runCatching { MainThreadWatchdog.recent(context) }.getOrDefault(emptyList())
+    if (janks.isNotEmpty()) {
+        out += HealthItem(
+            "主线程卡顿",
+            "运行状态",
+            janks.first(),
+            true,
+            "主线程单条消息超过 2 秒即记录（ANR 阈值为 5 秒）：\n" + janks.joinToString("\n"),
         )
     }
     return out

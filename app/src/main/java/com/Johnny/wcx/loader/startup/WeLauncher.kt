@@ -1,7 +1,10 @@
 package com.Johnny.wcx.loader.startup
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.res.Resources
+import android.os.Process
+import android.os.SystemClock
 import com.tencent.mm.boot.BuildConfig
 import com.Johnny.wcx.constants.PackageNames
 import com.Johnny.wcx.constants.Preferences
@@ -13,6 +16,7 @@ import com.Johnny.wcx.dynamic.SelfHealingMonitor
 import com.Johnny.wcx.loader.utils.ActivityProxy
 import com.Johnny.wcx.loader.utils.ParcelableFixer
 import com.Johnny.wcx.utils.HostInfo
+import com.Johnny.wcx.utils.MainThreadWatchdog
 import com.Johnny.wcx.utils.RuntimeConfig
 import com.Johnny.wcx.utils.TargetProcesses
 import com.Johnny.wcx.utils.WeLogger
@@ -75,10 +79,36 @@ object WeLauncher {
         // 在主线程同步执行会拖慢微信冷启动，表现为「先白屏一会、然后明显卡顿」。
         if (TargetProcesses.isInMain) {
             Thread({
+                // 微信冷启动时创建 DexKitBridge + 全量解析 dex 会占满 CPU/IO，
+                // 主线程抢不到时间片 → 输入事件分发超过 5s → 系统判 ANR 并结束整个微信进程。
+                // 用户感知就是「突然像被强行停止，然后模块重新加载」。
+                // 对策：把这条线程降到后台优先级，并等微信真正进入可见前台再开始。
+                runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
+                runCatching { MainThreadWatchdog.install() }
+                awaitVisibleOrTimeout(context.applicationContext ?: context, 20_000L)
+                runCatching { Thread.sleep(3_000L) }
                 runCatching {
                     HchatScriptBootstrap.install()
                 }.onFailure { WeLogger.e(TAG, "failed to install Hchat script subsystem", it) }
             }, "Hchat-Bootstrap").apply { isDaemon = true }.start()
+        }
+    }
+
+    /**
+     * 等宿主进程进入可见状态（importance <= IMPORTANCE_VISIBLE），最多 [timeoutMs]。
+     * 后台冷启动（被 push 拉起）时不会干等：超时后照常继续，只是晚一点解析。
+     */
+    private fun awaitVisibleOrTimeout(context: Context, timeoutMs: Long) {
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return
+            val selfPid = Process.myPid()
+            val deadline = SystemClock.uptimeMillis() + timeoutMs
+            while (SystemClock.uptimeMillis() < deadline) {
+                val importance = am.runningAppProcesses
+                    ?.firstOrNull { it.pid == selfPid }?.importance ?: return
+                if (importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) return
+                Thread.sleep(500L)
+            }
         }
     }
 
