@@ -18,6 +18,7 @@ import com.Johnny.wcx.utils.TargetProcesses
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.crash.ExitReasonRecorder
 import com.Johnny.wcx.utils.crash.JavaCrashHandler
+import com.Johnny.wcx.utils.crash.ProcessTimeline
 import com.Johnny.wcx.utils.hookBeforeDirectly
 import com.Johnny.wcx.utils.invokeOriginal
 import com.Johnny.wcx.utils.reflection.int
@@ -35,6 +36,8 @@ object WeLauncher {
         runCatching {
             val appCtx = context.applicationContext ?: context
             Thread({
+                // 启动时间线 + 上次退出原因：用于判断「后台被杀」是偶发还是周期性。
+                runCatching { ProcessTimeline.recordStartup(appCtx) }
                 runCatching { ExitReasonRecorder.recordOnStartup(appCtx) }
             }, "WCX-ExitReason").apply { isDaemon = true }.start()
         }

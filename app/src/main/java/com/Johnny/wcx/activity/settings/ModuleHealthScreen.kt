@@ -44,6 +44,7 @@ import com.Johnny.wcx.features.items.secret_friend.SecretFriendState
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.crash.ExitReasonRecorder
+import com.Johnny.wcx.utils.crash.ProcessTimeline
 import com.Johnny.wcx.BuildConfig
 import com.Johnny.wcx.utils.reflection.ClassLoaders
 import h.Hchat.hooks.api.core.WeChatApis
@@ -664,27 +665,42 @@ private fun moduleHealthSteps(context: Context): List<HealthStep> = listOf(
  * 这段信息是判断「模块有没有主动杀微信」的直接依据。
  */
 private fun lastExitItems(context: Context): List<HealthItem> {
+    val out = mutableListOf<HealthItem>()
+
     val summary = runCatching { ExitReasonRecorder.summary(context) }.getOrNull()
-    return listOf(
-        HealthItem(
-            "上次进程退出",
-            "运行状态",
-            summary ?: "无记录",
-            true,
-            if (summary == null) {
-                "Android 11 起系统会记录进程退出原因（内存不足回收 / Java 或原生崩溃 / ANR / 用户强行停止 等）。\n" +
-                    "当前还没有可用记录（首次安装、系统版本过低或系统未提供）。"
-            } else {
-                "最近一次微信进程退出的原因：$summary\n\n" +
-                    "· LOW_MEMORY = 系统内存不足回收（模块占用高时更容易触发）\n" +
-                    "· CRASH / CRASH_NATIVE = Java 或原生崩溃\n" +
-                    "· ANR = 无响应被系统结束\n" +
-                    "· USER_REQUESTED = 用户手动强行停止\n" +
-                    "· EXIT_SELF = 进程自己退出\n" +
-                    "以上都属于系统/进程侧行为，模块本身不会主动杀死微信。"
-            },
-        )
+    val diagnosis = runCatching { ExitReasonRecorder.diagnosis(context) }.getOrNull()
+    out += HealthItem(
+        "上次进程退出",
+        "运行状态",
+        summary ?: "无记录（需 Android 11 及以上）",
+        true,
+        diagnosis ?: ("Android 11 起系统会记录进程退出原因（内存不足回收 / Java 或原生崩溃 / ANR / 强行停止）。\n" +
+            "当前还没有可用记录：可能是首次安装、系统版本过低，或系统未保留记录。"),
     )
+
+    val starts = runCatching { ProcessTimeline.todayStartCount(context) }.getOrDefault(0)
+    val pss = runCatching { ProcessTimeline.currentPssMb(context) }.getOrDefault(0)
+    out += HealthItem(
+        "主进程启动次数",
+        "运行状态",
+        if (starts > 0) "今日 " + starts + " 次" else "无记录",
+        true,
+        "每次微信进程启动会记 1 次。\n" +
+            "若明显多于你手动打开微信的次数，说明进程在后台被反复杀掉或被系统反复拉起。\n" +
+            "当前进程内存（PSS）：" + (if (pss > 0) pss.toString() + "MB" else "未知"),
+    )
+
+    val recent = runCatching { ProcessTimeline.recent(context, 5) }.getOrDefault(emptyList())
+    if (recent.isNotEmpty()) {
+        out += HealthItem(
+            "最近启动记录",
+            "运行状态",
+            recent.first(),
+            true,
+            recent.joinToString("\n"),
+        )
+    }
+    return out
 }
 
 /** 「一键修复」动作（重建引导链路），供多处复用。 */
