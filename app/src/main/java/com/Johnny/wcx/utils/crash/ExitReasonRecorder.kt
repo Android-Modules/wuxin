@@ -30,25 +30,44 @@ object ExitReasonRecorder {
     private const val KEY_IMPORTANCE = "importance"
     private const val KEY_STATUS = "status"
 
-    /** [ApplicationExitInfo] 的 reason 常量（API 30 起固定）。 */
+    // ApplicationExitInfo 的 reason 常量（API 30 起固定）。这里用字面量，
+    // 避免在类初始化阶段引用 API 30 才有的类成员。
+    private const val REASON_UNKNOWN = 0
+    private const val REASON_EXIT_SELF = 1
+    private const val REASON_SIGNALED = 2
+    private const val REASON_LOW_MEMORY = 3
+    private const val REASON_CRASH = 4
+    private const val REASON_CRASH_NATIVE = 5
+    private const val REASON_ANR = 6
+    private const val REASON_INITIALIZATION_FAILURE = 7
+    private const val REASON_PERMISSION_CHANGE = 8
+    private const val REASON_EXCESSIVE_RESOURCE_USAGE = 9
+    private const val REASON_USER_REQUESTED = 10
+    private const val REASON_USER_STOPPED = 11
+    private const val REASON_DEPENDENCY_DIED = 12
+    private const val REASON_OTHER = 13
+    private const val REASON_FREEZER = 14
+    private const val REASON_PACKAGE_STATE_CHANGE = 15
+    private const val REASON_PACKAGE_UPDATED = 16
+
     private val REASON_NAMES = mapOf(
-        ApplicationExitInfo.REASON_UNKNOWN to "UNKNOWN 未知原因",
-        ApplicationExitInfo.REASON_EXIT_SELF to "EXIT_SELF 进程自己退出",
-        ApplicationExitInfo.REASON_SIGNALED to "SIGNALED 被系统信号杀死",
-        ApplicationExitInfo.REASON_LOW_MEMORY to "LOW_MEMORY 内存不足被系统回收",
-        ApplicationExitInfo.REASON_CRASH to "CRASH Java 崩溃",
-        ApplicationExitInfo.REASON_CRASH_NATIVE to "CRASH_NATIVE 原生崩溃",
-        ApplicationExitInfo.REASON_ANR to "ANR 无响应被系统结束",
-        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE to "INITIALIZATION_FAILURE 初始化失败",
-        ApplicationExitInfo.REASON_PERMISSION_CHANGE to "PERMISSION_CHANGE 权限变更",
-        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE to "EXCESSIVE_RESOURCE_USAGE 资源占用过高被系统结束",
-        ApplicationExitInfo.REASON_USER_REQUESTED to "USER_REQUESTED 被强行停止",
-        ApplicationExitInfo.REASON_USER_STOPPED to "USER_STOPPED 被用户停止",
-        ApplicationExitInfo.REASON_DEPENDENCY_DIED to "DEPENDENCY_DIED 依赖进程死亡",
-        ApplicationExitInfo.REASON_OTHER to "OTHER 其他原因",
-        ApplicationExitInfo.REASON_FREEZER to "FREEZER 被系统冻结",
-        ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE to "PACKAGE_STATE_CHANGE 包状态变化",
-        ApplicationExitInfo.REASON_PACKAGE_UPDATED to "PACKAGE_UPDATED 应用被更新",
+        REASON_UNKNOWN to "UNKNOWN 未知原因",
+        REASON_EXIT_SELF to "EXIT_SELF 进程自己退出",
+        REASON_SIGNALED to "SIGNALED 被系统信号杀死",
+        REASON_LOW_MEMORY to "LOW_MEMORY 内存不足被系统回收",
+        REASON_CRASH to "CRASH Java 崩溃",
+        REASON_CRASH_NATIVE to "CRASH_NATIVE 原生崩溃",
+        REASON_ANR to "ANR 无响应被系统结束",
+        REASON_INITIALIZATION_FAILURE to "INITIALIZATION_FAILURE 初始化失败",
+        REASON_PERMISSION_CHANGE to "PERMISSION_CHANGE 权限变更",
+        REASON_EXCESSIVE_RESOURCE_USAGE to "EXCESSIVE_RESOURCE_USAGE 资源占用过高被系统结束",
+        REASON_USER_REQUESTED to "USER_REQUESTED 被强行停止",
+        REASON_USER_STOPPED to "USER_STOPPED 被用户停止",
+        REASON_DEPENDENCY_DIED to "DEPENDENCY_DIED 依赖进程死亡",
+        REASON_OTHER to "OTHER 其他原因",
+        REASON_FREEZER to "FREEZER 被系统冻结",
+        REASON_PACKAGE_STATE_CHANGE to "PACKAGE_STATE_CHANGE 包状态变化",
+        REASON_PACKAGE_UPDATED to "PACKAGE_UPDATED 应用被更新",
     )
 
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
@@ -135,29 +154,29 @@ object ExitReasonRecorder {
     fun diagnosis(context: Context): String? {
         val data = read(context) ?: return null
         return when (data.reason) {
-            ApplicationExitInfo.REASON_LOW_MEMORY ->
+            REASON_LOW_MEMORY ->
                 "结论：微信是被系统按内存不足回收的（不是崩溃、也不是模块主动杀进程）。\n" +
                     "方向：模块侧的常驻内存（dex 解析、Hook、脚本运行时）会让微信更容易被选中回收。"
-            ApplicationExitInfo.REASON_CRASH ->
+            REASON_CRASH ->
                 "结论：微信发生了 Java 崩溃。可到「日志 → 崩溃日志」查看具体堆栈。"
-            ApplicationExitInfo.REASON_CRASH_NATIVE ->
+            REASON_CRASH_NATIVE ->
                 "结论：微信发生了原生层崩溃（native/SIGSEGV）。常见于 dex 解析库、脚本引擎等 native 组件。" +
                     "若稳定复现，需要定位到具体 .so。"
-            ApplicationExitInfo.REASON_ANR ->
+            REASON_ANR ->
                 "结论：微信主线程阻塞被系统判为无响应后结束。方向：检查主线程上是否有耗时操作。"
-            ApplicationExitInfo.REASON_USER_REQUESTED, ApplicationExitInfo.REASON_USER_STOPPED ->
+            REASON_USER_REQUESTED, REASON_USER_STOPPED ->
                 "结论：进程是被「强行停止 / 停止」结束的，这类操作只能由用户或系统省电策略发起，" +
                     "第三方模块在技术上无法强停其它进程。\n" +
                     "方向：检查系统「应用省电策略 / 后台运行限制 / 异常耗电自动管理」是否对微信做了限制。"
-            ApplicationExitInfo.REASON_SIGNALED ->
+            REASON_SIGNALED ->
                 "结论：进程被系统信号杀死（kill -9 一类），通常来自系统低内存回收或厂商后台清理。"
-            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ->
+            REASON_EXCESSIVE_RESOURCE_USAGE ->
                 "结论：系统判定该应用资源占用过高而结束它。方向：降低后台 CPU / 唤醒频率。"
-            ApplicationExitInfo.REASON_FREEZER ->
+            REASON_FREEZER ->
                 "结论：进程被系统冻结（后台冻结机制），随后被回收。属于系统省电行为。"
-            ApplicationExitInfo.REASON_EXIT_SELF ->
+            REASON_EXIT_SELF ->
                 "结论：进程自己调用了 exit 退出。若配合崩溃日志为空，需要排查模块内是否有主动退出路径。"
-            ApplicationExitInfo.REASON_PACKAGE_UPDATED ->
+            REASON_PACKAGE_UPDATED ->
                 "结论：微信被更新/覆盖安装，进程随包变化结束，属正常现象。"
             else -> "结论：原因码 " + data.reason + "，暂无对应建议。"
         }
