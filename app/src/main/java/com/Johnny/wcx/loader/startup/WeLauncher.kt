@@ -16,6 +16,8 @@ import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.RuntimeConfig
 import com.Johnny.wcx.utils.TargetProcesses
 import com.Johnny.wcx.utils.WeLogger
+import com.Johnny.wcx.utils.crash.ExitReasonRecorder
+import com.Johnny.wcx.utils.crash.JavaCrashHandler
 import com.Johnny.wcx.utils.hookBeforeDirectly
 import com.Johnny.wcx.utils.invokeOriginal
 import com.Johnny.wcx.utils.reflection.int
@@ -24,6 +26,18 @@ object WeLauncher {
 
     fun init(context: Context) {
         WeLogger.d(TAG, "loading in process name=${TargetProcesses.currentName}, type=${TargetProcesses.currentType}")
+
+        // 尽早接管未捕获异常：模块后台线程/协程抛异常时只记录、不结束宿主进程，
+        // 否则 Android 会直接杀掉整个微信进程（用户感知就是「微信被强行停止」）。
+        runCatching { JavaCrashHandler.install() }
+
+        // 记录上次进程退出原因（内存回收 / 崩溃 / ANR / 用户强行停止），供诊断页区分责任方。
+        runCatching {
+            val appCtx = context.applicationContext ?: context
+            Thread({
+                runCatching { ExitReasonRecorder.recordOnStartup(appCtx) }
+            }, "WCX-ExitReason").apply { isDaemon = true }.start()
+        }
 
         ParcelableFixer.init()
 
