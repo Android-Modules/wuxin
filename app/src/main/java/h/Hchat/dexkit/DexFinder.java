@@ -1424,6 +1424,10 @@ public class DexFinder {
 
             List<MethodData> methods = dexKit.findMethod(
                     mkMethodUsingStrings("send vedio args error, toUser[%s] fileName[%s]"));
+            if (methods.isEmpty()) {
+                // 老版本微信的日志串没有后半段，保留回落。
+                methods = dexKit.findMethod(mkMethodUsingStrings("send vedio args error"));
+            }
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
@@ -4216,16 +4220,16 @@ public class DexFinder {
         if (method == null || method.getReturnType() != void.class) return false;
         Class<?>[] params = method.getParameterTypes();
         if (params.length < 13) return false;
+        // 微信 8.0.79 把视频发送重构成协程链路，SendMsgMgr 的签名也随之漂移：
+        // 旧版第 7 位是 boolean、第 9 位是 String；新版第 7 位变成回调对象、第 9 位变成 boolean。
+        // 因此这里只锁定「Context + 3 个 String + 2 个 int」的形状，
+        // 唯一性由特征串 "send vedio args error, toUser[%s] fileName[%s]" 保证（见 resolveSendVideoApi）。
         return params[0] == Context.class
                 && params[1] == String.class
                 && params[2] == String.class
                 && params[3] == String.class
                 && (params[4] == int.class || params[4] == Integer.class)
-                && (params[5] == int.class || params[5] == Integer.class)
-                && (params[7] == boolean.class || params[7] == Boolean.class)
-                && (params[8] == boolean.class || params[8] == Boolean.class)
-                && params[9] == String.class
-                && params[10] == String.class;
+                && (params[5] == int.class || params[5] == Integer.class);
     }
 
     private boolean isEmojiSendMethod(Method method) {

@@ -105,9 +105,84 @@ public final class WeChatVideoApi {
     }
 
     public boolean canSendSilently() {
-        return hostContext != null
-                && dexFinder != null
-                && dexFinder.sendVideoTaskClass != null;
+        if (hostContext == null || dexFinder == null) return false;
+        // 老版本微信：CopyVideoTask（AsyncTask）可用。
+        if (dexFinder.sendVideoTaskClass != null) return true;
+        // 8.0.79 起：CopyVideoTask 被重构为协程，改走 SendMsgMgr.sendVideo 的 15 参实现。
+        return dexFinder.sendVideoMethod != null && resolveSendVideoService() != null;
+    }
+
+    /** 8.0.79 视频发送服务实例（混淆类名，通过微信内部服务定位器获取）。 */
+    private volatile Object sendVideoService;
+    private volatile boolean sendVideoServiceResolved;
+
+    private Object resolveSendVideoService() {
+        if (sendVideoServiceResolved) return sendVideoService;
+        sendVideoServiceResolved = true;
+        try {
+            Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
+            if (method == null) return null;
+            if (Modifier.isStatic(method.getModifiers())) return null;
+            Class<?> serviceClass = method.getDeclaringClass();
+            ClassLoader loader = hostContext != null ? hostContext.getClassLoader()
+                    : serviceClass.getClassLoader();
+            // 微信内部插件/服务定位器：n0.c(Class) 返回该 Class 的实例（见 SendMsgMgr 自身实现）。
+            Class<?> locator = Class.forName("ni5.n0", false, loader);
+            Method c = locator.getDeclaredMethod("c", Class.class);
+            c.setAccessible(true);
+            Object instance = c.invoke(null, serviceClass);
+            if (serviceClass.isInstance(instance)) {
+                sendVideoService = instance;
+                log("视频发送服务已定位: " + serviceClass.getName());
+            } else {
+                log("视频发送服务定位失败: "
+                        + (instance == null ? "null" : instance.getClass().getName()));
+            }
+        } catch (Throwable e) {
+            log("视频发送服务定位异常: " + e);
+        }
+        return sendVideoService;
+    }
+
+    /**
+     * 走微信 8.0.79 的 SendMsgMgr 发送实现。
+     * 参数顺序按反编译结果：Context, toUser, videoPath, thumbPath, int, int(durationSec),
+     * 回调, boolean, boolean, String, String, MsgIdTalker, 回调, String, 回调。
+     */
+    private boolean sendViaService(String talker, String videoPath, String thumbPath) {
+        Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
+        if (method == null) return false;
+        Object service = resolveSendVideoService();
+        if (service == null) return false;
+        Class<?>[] types = method.getParameterTypes();
+        if (types.length < 15) {
+            log("视频发送服务调用跳过: 参数个数不符 " + types.length);
+            return false;
+        }
+        Object[] args = new Object[types.length];
+        args[0] = sendContext();
+        args[1] = talker;
+        args[2] = videoPath;
+        args[3] = thumbPath;
+        args[4] = 0;
+        args[5] = videoDurationSeconds(videoPath);
+        args[6] = null;
+        args[7] = Boolean.FALSE;
+        args[8] = Boolean.FALSE;
+        args[9] = "";
+        args[10] = "";
+        args[11] = null;
+        args[12] = null;
+        args[13] = "";
+        args[14] = null;
+        try {
+            KavaReflector.invokeOrThrow(method, service, args);
+            log("视频已提交发送: talker=" + talker + " duration=" + args[5]);
+            return true;
+        } catch (Throwable e) {
+            log("视频发送服务调用失败: " + e);
+            return false;
+        }
     }
 
     public String resolvePathToken(String token) {
@@ -384,6 +459,9 @@ public final class WeChatVideoApi {
                 log("发送视频失败: 缩略图不可用");
                 return false;
             }
+            // 8.0.79 起优先走 SendMsgMgr 服务（CopyVideoTask 已重构掉）。
+            if (sendViaService(talker, videoPath, realThumbPath)) return true;
+
             Object task = newTask();
             if (task == null) return false;
 
