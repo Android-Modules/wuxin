@@ -86,6 +86,8 @@ object WeLauncher {
                 runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
                 runCatching { MainThreadWatchdog.install() }
                 awaitVisibleOrTimeout(context.applicationContext ?: context, 20_000L)
+                // 再等主线程消息队列空闲（首屏渲染/启动动画结束），避免与 UI 抢 CPU。
+                awaitMainLooperIdle(15_000L)
                 runCatching { Thread.sleep(3_000L) }
                 runCatching {
                     HchatScriptBootstrap.install()
@@ -109,6 +111,22 @@ object WeLauncher {
                 if (importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) return
                 Thread.sleep(500L)
             }
+        }
+    }
+
+    /** 等主线程消息队列出现一次空闲（说明首屏已渲染完），最多 [timeoutMs]。 */
+    private fun awaitMainLooperIdle(timeoutMs: Long) {
+        runCatching {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching {
+                    android.os.Looper.myQueue().addIdleHandler {
+                        latch.countDown()
+                        false
+                    }
+                }.onFailure { latch.countDown() }
+            }
+            latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         }
     }
 
