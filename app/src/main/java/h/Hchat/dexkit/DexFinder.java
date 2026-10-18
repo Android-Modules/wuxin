@@ -295,9 +295,19 @@ public class DexFinder {
         openUnionLocatorResolved = false;
         networkQueueLocatorResolved = false;
         if (loadCache()) {
-            resolvedAll = true;
-            logDetail("命中缓存: " + shortKey(runtimeCacheKey));
-            return;
+            // 缓存命中不等于缓存完整：解析失败的锚点会以空串落盘，而 loadMethod 读到空串只返回 null、
+            // 不标记 descriptorInvalid，于是「某锚点永远为 null」会被固化，后续 resolveXxx 直接 return。
+            // 这里在采纳缓存前校验关键锚点，缺失或无效则就地补解析。
+            String missing = missingCriticalAnchors();
+            if (missing.isEmpty()) {
+                boolean repairVideo = !isSendVideoMethod(sendVideoMethod);
+                if (repairVideo) resolveSendVideoApi();
+                if (repairVideo) saveCache();
+                resolvedAll = true;
+                logDetail("命中缓存: " + shortKey(runtimeCacheKey));
+                return;
+            }
+            logDetail("缓存命中但关键锚点缺失(" + missing + ")，改为重新解析");
         }
         cacheDescriptorInvalid = false;
         resolveAddMsgClasses();
@@ -1421,6 +1431,21 @@ public class DexFinder {
         }
     }
 
+    /** 缓存里必须存在、否则视为缓存不可用的关键锚点。 */
+    private String missingCriticalAnchors() {
+        StringBuilder sb = new StringBuilder();
+        if (sendTextMsgClass == null) appendMissing(sb, "sendTextMsg");
+        if (sendImageMethod == null) appendMissing(sb, "sendImage");
+        if (sendFileMethod == null) appendMissing(sb, "sendFile");
+        if (serviceGetterMethod == null) appendMissing(sb, "serviceGetter");
+        return sb.toString();
+    }
+
+    private void appendMissing(StringBuilder sb, String name) {
+        if (sb.length() > 0) sb.append(',');
+        sb.append(name);
+    }
+
     public void resolveSendVideoApi() {
         if (ensureSnapshotLoaded()) return;
         try {
@@ -1432,15 +1457,20 @@ public class DexFinder {
                 // 老版本微信的日志串没有后半段，保留回落。
                 methods = dexKit.findMethod(mkMethodUsingStrings("send vedio args error"));
             }
+            Method best = null;
             for (MethodData methodData : methods) {
                 try {
                     Method method = methodData.getMethodInstance(classLoader);
                     if (!isSendVideoMethod(method)) continue;
                     KavaReflector.accessible(method);
-                    sendVideoMethod = method;
-                    break;
+                    // 同时存在 13 参（老版）与 15 参（8.0.79 SendMsgMgr）时优先取参数更多的那个。
+                    if (best == null
+                            || method.getParameterTypes().length > best.getParameterTypes().length) {
+                        best = method;
+                    }
                 } catch (Throwable ignored) {}
             }
+            sendVideoMethod = best;
 
             logDetail("视频发送方法: " + methodName(sendVideoMethod));
         } catch (Throwable e) {

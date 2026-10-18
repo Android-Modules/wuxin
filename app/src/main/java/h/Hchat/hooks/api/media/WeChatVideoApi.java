@@ -109,7 +109,31 @@ public final class WeChatVideoApi {
         // 老版本微信：CopyVideoTask（AsyncTask）可用。
         if (dexFinder.sendVideoTaskClass != null) return true;
         // 8.0.79 起：CopyVideoTask 被重构为协程，改走 SendMsgMgr.sendVideo 的 15 参实现。
-        return dexFinder.sendVideoMethod != null && resolveSendVideoService() != null;
+        return hasServiceSendMethod();
+    }
+
+    /**
+     * 校验 sendVideoMethod 是否就是 8.0.79 的 SendMsgMgr 15 参实现。
+     * 参数顺序（反编译确认）：Context, toUser, videoPath, thumbPath, int, int(duration),
+     * 回调对象, boolean, boolean, String, String, MsgIdTalker, 回调对象, String, 接口。
+     * 严格校验签名，避免把别的同名特征方法当成发送入口。
+     */
+    private boolean hasServiceSendMethod() {
+        Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
+        if (method == null || dexFinder.serviceGetterMethod == null) return false;
+        Class<?>[] params = method.getParameterTypes();
+        return method.getReturnType() == void.class
+                && !Modifier.isStatic(method.getModifiers())
+                && params.length == 15
+                && params[0] == Context.class
+                && params[1] == String.class && params[2] == String.class && params[3] == String.class
+                && params[4] == int.class && params[5] == int.class
+                && !params[6].isPrimitive()
+                && params[7] == boolean.class && params[8] == boolean.class
+                && params[9] == String.class && params[10] == String.class
+                && "com.tencent.mm.plugin.msg.MsgIdTalker".equals(params[11].getName())
+                && !params[12].isPrimitive()
+                && params[13] == String.class && params[14].isInterface();
     }
 
     /** 8.0.79 视频发送服务实例（混淆类名，通过微信内部服务定位器获取）。 */
@@ -119,7 +143,7 @@ public final class WeChatVideoApi {
 
     private Object resolveSendVideoService() {
         if (sendVideoService != null) return sendVideoService;
-        // 微信的插件/服务是懒初始化的，首次可能取不到；失败后节流重试，不永久缓存失败结果。
+        // 微信插件/服务是懒初始化的，首次可能取不到；失败后节流重试，不永久缓存失败结果。
         long now = android.os.SystemClock.uptimeMillis();
         if (now < sendVideoNextTryAt) return null;
         synchronized (this) {
@@ -128,41 +152,18 @@ public final class WeChatVideoApi {
                 Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
                 if (method == null) {
                     sendVideoServiceState = "发送方法未解析";
-                    sendVideoNextTryAt = now + 3000L;
-                    return null;
-                }
-                if (Modifier.isStatic(method.getModifiers())) {
-                    sendVideoServiceState = "发送方法是静态方法，无需实例";
-                    sendVideoNextTryAt = now + 3000L;
-                    return null;
-                }
-                Class<?> serviceClass = method.getDeclaringClass();
-                ClassLoader loader = hostContext != null ? hostContext.getClassLoader()
-                        : serviceClass.getClassLoader();
-                // 微信内部服务定位器：n0.c(Class) 返回对应实现（见 SendMsgMgr 自身实现）。
-                Class<?> locator = Class.forName("ni5.n0", false, loader);
-                Method c = locator.getDeclaredMethod("c", Class.class);
-                c.setAccessible(true);
-
-                // 先按实现类取；取不到再按它实现的接口取（不同版本注册的入口类型不一致）。
-                java.util.List<Class<?>> candidates = new java.util.ArrayList<>();
-                candidates.add(serviceClass);
-                for (Class<?> itf : serviceClass.getInterfaces()) candidates.add(itf);
-
-                String lastType = "null";
-                for (Class<?> candidate : candidates) {
-                    Object instance = c.invoke(null, candidate);
-                    lastType = instance == null ? "null" : instance.getClass().getName();
-                    if (serviceClass.isInstance(instance)) {
-                        sendVideoService = instance;
-                        sendVideoServiceState = "已定位(" + candidate.getName() + ")";
-                        log("视频发送服务已定位: " + serviceClass.getName()
-                                + " via " + candidate.getName());
+                } else if (dexFinder.serviceGetterMethod == null) {
+                    sendVideoServiceState = "服务容器方法未解析(serviceGetter=null)";
+                } else {
+                    Object receiver = WeChatInternalServices.getService(dexFinder, method.getDeclaringClass());
+                    if (receiver != null) {
+                        sendVideoService = receiver;
+                        sendVideoServiceState = "已定位(" + receiver.getClass().getName() + ")";
+                        log("视频发送服务已定位: " + receiver.getClass().getName());
                         return sendVideoService;
                     }
+                    sendVideoServiceState = "定位失败(服务实例为 null)";
                 }
-                sendVideoServiceState = "定位失败(返回 " + lastType + ")";
-                log("视频发送服务定位失败: 返回值 " + lastType);
             } catch (Throwable e) {
                 sendVideoServiceState = "定位异常(" + e + ")";
                 log("视频发送服务定位异常: " + e);
@@ -188,13 +189,16 @@ public final class WeChatVideoApi {
      * 参数顺序按反编译结果：Context, toUser, videoPath, thumbPath, int, int(durationSec),
      * 回调, boolean, boolean, String, String, MsgIdTalker, 回调, String, 回调。
      */
-    private boolean sendViaService(String talker, String videoPath, String thumbPath) {
+    private boolean sendUsingService(String talker, String videoPath, String thumbPath) {
         Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
         if (method == null) return false;
         Object service = resolveSendVideoService();
-        if (service == null) return false;
+        if (service == null) {
+            log("发送视频失败: 视频发送服务不可用(" + sendVideoServiceState + ")");
+            return false;
+        }
         Class<?>[] types = method.getParameterTypes();
-        if (types.length < 15) {
+        if (types.length != 15) {
             log("视频发送服务调用跳过: 参数个数不符 " + types.length);
             return false;
         }
@@ -498,8 +502,10 @@ public final class WeChatVideoApi {
                 log("发送视频失败: 缩略图不可用");
                 return false;
             }
-            // 8.0.79 起优先走 SendMsgMgr 服务（CopyVideoTask 已重构掉）。
-            if (sendViaService(talker, videoPath, realThumbPath)) return true;
+            // 8.0.79 起：CopyVideoTask 已被重构掉，改走 SendMsgMgr 的 15 参实现。
+            if (dexFinder.sendVideoTaskClass == null && hasServiceSendMethod()) {
+                return sendUsingService(talker, videoPath, realThumbPath);
+            }
 
             Object task = newTask();
             if (task == null) return false;
