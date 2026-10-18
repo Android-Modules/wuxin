@@ -1882,7 +1882,12 @@ object WeMessageApi : ApiFeature(), IResolveDex {
      * 在真正写入文件字节 *之前* 就从 SERVERID:// 改写为最终文件名, 所以只能以磁盘上文件是否存在为准。
      */
     private fun ensureImageCachedFile(msgSvrId: Long): Path? {
-        val baseRow = queryImgInfoRow(msgSvrId) ?: return null
+        val baseRow = queryImgInfoRow(msgSvrId)
+        if (baseRow == null) {
+            // 查不到图片信息行：多数是消息未入库 / 表结构与当前微信版本不一致。
+            WeLogger.w(TAG, "cacheImage: image info row not found, msgSvrId=" + msgSvrId)
+            return null
+        }
 
         // 有原图行则优先下载原图, 否则退回基础行
         val targetRow = baseRow.hdImgId.takeIf { it > 0 }
@@ -1894,8 +1899,23 @@ object WeMessageApi : ApiFeature(), IResolveDex {
         resolveExistingImageFile(targetRow)?.let { return it }
 
         // 触发 CDN 下载, 轮询直到文件真正落地。talker 用基础行的 (原图行可能未存 msgTalker)。
-        if (!triggerDownload(targetRow.localId, targetRow.talker.ifEmpty { baseRow.talker })) return null
-        return pollUntilImageFileExists(targetRow.localId)
+        if (!triggerDownload(targetRow.localId, targetRow.talker.ifEmpty { baseRow.talker })) {
+            WeLogger.w(
+                TAG,
+                "cacheImage: trigger download rejected, msgSvrId=" + msgSvrId +
+                    ", localId=" + targetRow.localId
+            )
+            return null
+        }
+        val cached = pollUntilImageFileExists(targetRow.localId)
+        if (cached == null) {
+            WeLogger.w(
+                TAG,
+                "cacheImage: download timeout, msgSvrId=" + msgSvrId +
+                    ", localId=" + targetRow.localId
+            )
+        }
+        return cached
     }
 
     /**

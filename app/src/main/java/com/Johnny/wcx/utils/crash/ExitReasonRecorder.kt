@@ -85,23 +85,15 @@ object ExitReasonRecorder {
             if (list.isNullOrEmpty()) return
 
             val selfPackage = context.packageName
-            // 优先取「本人进程名 == 包名」的那条（微信主进程），其余进程（:push 等）作次选。
+            // 只看「进程名 == 包名」的主进程记录。
+            // 子进程（:appbrand0 / :push 等）被系统杀掉是常态，它的 SIGNALED 记录会把主进程
+            // 真正的退出原因（例如 ANR）覆盖掉，导致自检页显示错误的结论。
             var picked: ApplicationExitInfo? = null
             var pickedTime = 0L
             for (info in list) {
                 if (info == null) continue
-                val name = info.processName.orEmpty()
-                if (name.isNotEmpty() && !name.startsWith(selfPackage)) continue
-                // 主进程（无冒号后缀）优先；同为主进程时取最近一次。
-                val isMainProcess = name == selfPackage
-                val isPickedMain = picked?.processName == selfPackage
-                val better = when {
-                    picked == null -> true
-                    isMainProcess && !isPickedMain -> true
-                    isMainProcess == isPickedMain -> info.timestamp > pickedTime
-                    else -> false
-                }
-                if (better) {
+                if (info.processName.orEmpty() != selfPackage) continue
+                if (info.timestamp > pickedTime) {
                     picked = info
                     pickedTime = info.timestamp
                 }
