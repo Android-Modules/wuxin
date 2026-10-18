@@ -114,34 +114,73 @@ public final class WeChatVideoApi {
 
     /** 8.0.79 视频发送服务实例（混淆类名，通过微信内部服务定位器获取）。 */
     private volatile Object sendVideoService;
-    private volatile boolean sendVideoServiceResolved;
+    private volatile long sendVideoNextTryAt;
+    private volatile String sendVideoServiceState = "未尝试";
 
     private Object resolveSendVideoService() {
-        if (sendVideoServiceResolved) return sendVideoService;
-        sendVideoServiceResolved = true;
-        try {
-            Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
-            if (method == null) return null;
-            if (Modifier.isStatic(method.getModifiers())) return null;
-            Class<?> serviceClass = method.getDeclaringClass();
-            ClassLoader loader = hostContext != null ? hostContext.getClassLoader()
-                    : serviceClass.getClassLoader();
-            // 微信内部插件/服务定位器：n0.c(Class) 返回该 Class 的实例（见 SendMsgMgr 自身实现）。
-            Class<?> locator = Class.forName("ni5.n0", false, loader);
-            Method c = locator.getDeclaredMethod("c", Class.class);
-            c.setAccessible(true);
-            Object instance = c.invoke(null, serviceClass);
-            if (serviceClass.isInstance(instance)) {
-                sendVideoService = instance;
-                log("视频发送服务已定位: " + serviceClass.getName());
-            } else {
-                log("视频发送服务定位失败: "
-                        + (instance == null ? "null" : instance.getClass().getName()));
+        if (sendVideoService != null) return sendVideoService;
+        // 微信的插件/服务是懒初始化的，首次可能取不到；失败后节流重试，不永久缓存失败结果。
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now < sendVideoNextTryAt) return null;
+        synchronized (this) {
+            if (sendVideoService != null) return sendVideoService;
+            try {
+                Method method = dexFinder != null ? dexFinder.sendVideoMethod : null;
+                if (method == null) {
+                    sendVideoServiceState = "发送方法未解析";
+                    sendVideoNextTryAt = now + 3000L;
+                    return null;
+                }
+                if (Modifier.isStatic(method.getModifiers())) {
+                    sendVideoServiceState = "发送方法是静态方法，无需实例";
+                    sendVideoNextTryAt = now + 3000L;
+                    return null;
+                }
+                Class<?> serviceClass = method.getDeclaringClass();
+                ClassLoader loader = hostContext != null ? hostContext.getClassLoader()
+                        : serviceClass.getClassLoader();
+                // 微信内部服务定位器：n0.c(Class) 返回对应实现（见 SendMsgMgr 自身实现）。
+                Class<?> locator = Class.forName("ni5.n0", false, loader);
+                Method c = locator.getDeclaredMethod("c", Class.class);
+                c.setAccessible(true);
+
+                // 先按实现类取；取不到再按它实现的接口取（不同版本注册的入口类型不一致）。
+                java.util.List<Class<?>> candidates = new java.util.ArrayList<>();
+                candidates.add(serviceClass);
+                for (Class<?> itf : serviceClass.getInterfaces()) candidates.add(itf);
+
+                String lastType = "null";
+                for (Class<?> candidate : candidates) {
+                    Object instance = c.invoke(null, candidate);
+                    lastType = instance == null ? "null" : instance.getClass().getName();
+                    if (serviceClass.isInstance(instance)) {
+                        sendVideoService = instance;
+                        sendVideoServiceState = "已定位(" + candidate.getName() + ")";
+                        log("视频发送服务已定位: " + serviceClass.getName()
+                                + " via " + candidate.getName());
+                        return sendVideoService;
+                    }
+                }
+                sendVideoServiceState = "定位失败(返回 " + lastType + ")";
+                log("视频发送服务定位失败: 返回值 " + lastType);
+            } catch (Throwable e) {
+                sendVideoServiceState = "定位异常(" + e + ")";
+                log("视频发送服务定位异常: " + e);
             }
-        } catch (Throwable e) {
-            log("视频发送服务定位异常: " + e);
+            sendVideoNextTryAt = android.os.SystemClock.uptimeMillis() + 3000L;
         }
         return sendVideoService;
+    }
+
+    /** 供诊断页展示：定位到哪一步、卡在哪一步。 */
+    public String diagnostic() {
+        boolean methodOk = dexFinder != null && dexFinder.sendVideoMethod != null;
+        boolean taskOk = dexFinder != null && dexFinder.sendVideoTaskClass != null;
+        Object service = resolveSendVideoService();
+        return "method=" + (methodOk ? "ok" : "null")
+                + ", legacyTask=" + (taskOk ? "ok" : "null")
+                + ", service=" + (service != null ? "ok" : "null")
+                + "(" + sendVideoServiceState + ")";
     }
 
     /**
