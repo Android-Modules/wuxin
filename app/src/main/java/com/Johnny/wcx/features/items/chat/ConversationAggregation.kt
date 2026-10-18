@@ -2416,6 +2416,9 @@ object ConversationAggregation : ClickableFeature(),
             .firstOrNull(::isFolderId)
     }
 
+    /** 供「悬浮标题栏」等特性判断这个页面是不是一个归拢分组页。 */
+    fun folderIdFromIntent(intent: Intent?): String? = readFolderIdFromIntent(intent)
+
     private inline fun <T> withQueryRewriteSuppressed(action: () -> T): T {
         val oldValue = suppressQueryRewrite.get()
         suppressQueryRewrite.set(true)
