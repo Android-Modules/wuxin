@@ -36,11 +36,16 @@ object ProcessTimeline {
     /** 模块加载时调用：记录本次启动。 */
     fun recordStartup(context: Context) {
         runCatching {
+            // 只统计主进程：小程序（:appbrand0）等子进程会被系统频繁起停，
+            // 全部计入会让「今日启动次数」严重虚高、完全失去参考价值。
+            val processName = context.applicationInfo?.processName ?: context.packageName
+            if (processName != context.packageName) return
+
             val now = System.currentTimeMillis()
             val pid = Process.myPid()
             val pssMb = readPssMb(context)
             val line = fmt.format(Date(now)) + "｜pid=" + pid +
-                "｜" + (context.applicationInfo?.processName ?: context.packageName) +
+                "｜" + processName +
                 "｜" + if (pssMb > 0) pssMb.toString() + "MB" else "?"
 
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
