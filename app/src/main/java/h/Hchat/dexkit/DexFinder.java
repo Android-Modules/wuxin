@@ -313,7 +313,11 @@ public class DexFinder {
         resolveSendXmlApi();
         resolveGroupSolitaireApi();
         resolveLocalMessageApi();
+        // 视频发送：旧版本走 CopyVideoTask（AsyncTask），8.0.79 起改走 SendMsgMgr 的 15 参实现。
+        // 这里必须两个都解析——之前只调了 Task 版本，导致 sendVideoMethod 一直是 null，
+        // 「完整性自检」永远报 interaction.media.video 缺失。
         resolveSendVideoTaskApi();
+        resolveSendVideoApi();
         resolveVideoPathApi();
         resolveVideoInfoApi();
         resolveSendVoiceApi();
