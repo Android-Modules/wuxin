@@ -167,6 +167,44 @@ object MuteHiddenSurface : SwitchFeature() {
     override fun onDisable() = HideContacts.onSurfaceChanged()
 }
 
+
+// ── 新的朋友 / 未读角标 ─────────────────────────────────────────────────────
+
+@Feature(
+    name = HideContacts.SURFACE_NEW_FRIENDS,
+    categories = ["密友功能"],
+    description = "通讯录「新的朋友」里名单内联系人的好友申请、头像条与红点都不显示",
+)
+object HideNewFriendsSurface : SwitchFeature() {
+    override val defaultEnabled: Boolean = true
+    override fun onEnable() = HideContacts.onSurfaceChanged()
+    override fun onDisable() = HideContacts.onSurfaceChanged()
+}
+
+@Feature(
+    name = HideContacts.SURFACE_UNREAD,
+    categories = ["密友功能"],
+    description = "名单内联系人的未读消息不计入主页角标与底部 Tab 数字",
+)
+object HideUnreadSurface : SwitchFeature() {
+    override val defaultEnabled: Boolean = true
+    override fun onEnable() = HideContacts.onSurfaceChanged()
+    override fun onDisable() = HideContacts.onSurfaceChanged()
+}
+
+// ── 自动拒接 ────────────────────────────────────────────────────────────────
+
+@Feature(
+    name = HideContacts.SURFACE_AUTO_REJECT_VOIP,
+    categories = ["密友功能"],
+    description = "名单内联系人打来时立即向对方拒接（关闭则仅隐藏来电，对方会响到超时）",
+)
+object AutoRejectVoipSurface : SwitchFeature() {
+    override val defaultEnabled: Boolean = false
+    override fun onEnable() = HideContacts.onSurfaceChanged()
+    override fun onDisable() = HideContacts.onSurfaceChanged()
+}
+
 /**
  * 各面开关变化后的统一收尾：刷新一次会话列表让结果立刻可见。
  *

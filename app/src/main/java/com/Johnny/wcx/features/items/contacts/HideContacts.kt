@@ -114,6 +114,9 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     const val SURFACE_BLOCK_CHAT = "禁止进入聊天"
     const val SURFACE_BLOCK_PROFILE = "禁止查看资料"
     const val SURFACE_MUTE = "自动免打扰"
+    const val SURFACE_NEW_FRIENDS = "新的朋友隐藏"
+    const val SURFACE_UNREAD = "未读角标隐藏"
+    const val SURFACE_AUTO_REJECT_VOIP = "自动拒绝音视频通话"
 
     /** 某个隐藏面是否开启（默认开启，升级上来的用户行为不变）。 */
     internal fun surfaceOn(surface: String): Boolean = WePrefs.getBoolOrDef(surface, true)
@@ -593,9 +596,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     /** For SQL rewriters, which bail wholesale rather than testing individual wxids. */
     internal val isTemporarilyShown: Boolean get() = temporarilyShown
 
-    internal val autoRejectVoipEnabled: Boolean get() = autoRejectVoip
+    internal val autoRejectVoipEnabled: Boolean get() = surfaceOn(SURFACE_AUTO_REJECT_VOIP)
 
-    internal var autoRejectVoip by prefOption("hide_auto_reject", false)
     internal var tripleClickTitle by prefOption("hide_triple_click_title", false)
 
     /** 主页搜索框临时显示指令（默认 #wm#，可自定义）。 */
@@ -712,7 +714,6 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
             AlertDialogContent(
                 title = { Text("隐藏联系人") },
                 text = {
-                    var autoRejectVoipInput by remember { mutableStateOf(autoRejectVoip) }
                     var tripleClickTitleInput by remember { mutableStateOf(tripleClickTitle) }
 
                     // 普通可滚动 Column，而不是 LazyColumn/SegmentedColumn：AlertDialog 的文本区
@@ -753,16 +754,6 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            },
-                        )
-                        SwitchWidget(
-                            iconPlaceholder = false,
-                            title = "自动拒绝音视频通话",
-                            description = "关闭时仅隐藏来电，对方会一直响到超时；开启后立即向对方发送拒接",
-                            checked = autoRejectVoipInput,
-                            onCheckedChange = {
-                                autoRejectVoipInput = it
-                                autoRejectVoip = it
                             },
                         )
                         BaseWidget(

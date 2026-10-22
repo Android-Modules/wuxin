@@ -28,7 +28,8 @@ private const val TAG = "HideContacts.Sql"
 internal fun HideContacts.installSqlHooks() {
     // wrapper 是所有列表查询的公共咽喉，只要有任意一个查询型面开着就得装。
     if (surfaceOn(SURFACE_CONVERSATIONS) || surfaceOn(SURFACE_CONTACTS) ||
-        surfaceOn(SURFACE_MOMENTS_INLINE)
+        surfaceOn(SURFACE_MOMENTS_INLINE) || surfaceOn(SURFACE_NEW_FRIENDS) ||
+        surfaceOn(SURFACE_UNREAD)
     ) {
         installWrapperHook()
     }
@@ -37,7 +38,9 @@ internal fun HideContacts.installSqlHooks() {
 
 /** 把 SQL 规则映射到它所属的隐藏面，用于按面开关决定这条规则是否生效。 */
 private fun ruleSurface(ruleName: String): String = when (ruleName) {
-    "conversation-list", "unread-count" -> HideContacts.SURFACE_CONVERSATIONS
+    "conversation-list" -> HideContacts.SURFACE_CONVERSATIONS
+    "unread-count" -> HideContacts.SURFACE_UNREAD
+    "new-friends" -> HideContacts.SURFACE_NEW_FRIENDS
     "moments-comments" -> HideContacts.SURFACE_MOMENTS_INLINE
     else -> HideContacts.SURFACE_CONTACTS
 }

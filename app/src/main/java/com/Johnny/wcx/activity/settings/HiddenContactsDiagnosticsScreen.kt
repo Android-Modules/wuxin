@@ -430,7 +430,7 @@ private fun surfaceRows(): List<DiagRow> {
         },
     )
 
-    val autoReject = runCatching { HideContacts.autoRejectVoip }.getOrDefault(false)
+    val autoReject = runCatching { HideContacts.surfaceOn(HideContacts.SURFACE_AUTO_REJECT_VOIP) }.getOrDefault(false)
     out += DiagRow(
         "自动拒绝音视频通话", "隐藏与拦截", if (autoReject) "开启" else "关闭", true,
         "开启时对名单内联系人的来电立即发送拒接；关闭时仅隐藏来电，对方会响到超时。" +
