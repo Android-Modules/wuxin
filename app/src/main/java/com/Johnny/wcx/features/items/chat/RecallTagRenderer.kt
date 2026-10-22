@@ -10,7 +10,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.WeLogger
-import dev.ujhhgtg.reflekt.reflekt
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import dev.ujhhgtg.reflekt.utils.toClass
 
 /**
@@ -55,7 +56,8 @@ internal object RecallTagRenderer {
             val entries = blockedEntries().toMutableSet()
             entries.add("$msgSvrId|${content.take(80)}")
             // 无序遍历的 Set 没有"最旧"概念，超出上限就整批保留最近的若干条即可。
-            val trimmed = if (entries.size <= MAX_ENTRIES) entries else entries.takeLast(MAX_ENTRIES).toSet()
+            val trimmed = if (entries.size <= MAX_ENTRIES) entries
+            else entries.toList().takeLast(MAX_ENTRIES).toSet()
             WePrefs.putStringSet(KEY_BLOCKED, trimmed)
         }.onFailure { WeLogger.w(TAG, "记录被撤回消息失败", it) }
     }
@@ -71,19 +73,20 @@ internal object RecallTagRenderer {
             WeLogger.w(TAG, "未找到 $CONTAINER_CLASS，圆角标签不可用（不影响防撤回）", ex)
             return
         }
-        val method = runCatching {
-            clazz.reflekt().firstMethodOrNull { name = "onAttachedToWindow"; parameterCount = 0 }
-        }.getOrElse { ex ->
-            WeLogger.w(TAG, "解析 onAttachedToWindow 失败，圆角标签不可用", ex)
+        val method = runCatching { clazz.getDeclaredMethod("onAttachedToWindow") }.getOrElse { ex ->
+            WeLogger.w(TAG, "ChattingItemContainer.onAttachedToWindow 不存在，圆角标签不可用", ex)
             return
         }
-        if (method == null) {
-            WeLogger.w(TAG, "ChattingItemContainer.onAttachedToWindow 不存在，圆角标签不可用")
+        runCatching {
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    runCatching { decorate(param.thisObject as? ViewGroup) }
+                        .onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
+                }
+            })
+        }.onFailure { ex ->
+            WeLogger.w(TAG, "hook onAttachedToWindow 失败，圆角标签不可用", ex)
             return
-        }
-        method.hookAfter {
-            runCatching { decorate(thisObject as? ViewGroup) }
-                .onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
         }
         installed = true
         WeLogger.i(TAG, "圆角标签渲染已安装")
