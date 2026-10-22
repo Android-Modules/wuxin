@@ -117,6 +117,7 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     const val SURFACE_NEW_FRIENDS = "新的朋友隐藏"
     const val SURFACE_UNREAD = "未读角标隐藏"
     const val SURFACE_AUTO_REJECT_VOIP = "自动拒绝音视频通话"
+    const val SURFACE_VIBRATE = "密友消息震动"
 
     /** 某个隐藏面是否开启（默认开启，升级上来的用户行为不变）。 */
     internal fun surfaceOn(surface: String): Boolean = WePrefs.getBoolOrDef(surface, true)

@@ -205,6 +205,20 @@ object AutoRejectVoipSurface : SwitchFeature() {
     override fun onDisable() = HideContacts.onSurfaceChanged()
 }
 
+
+// ── 密友消息震动 ────────────────────────────────────────────────────────────
+
+@Feature(
+    name = HideContacts.SURFACE_VIBRATE,
+    categories = ["密友功能"],
+    description = "名单内联系人来消息时（通知被隐藏）补一次短震动提醒",
+)
+object VibrateHiddenSurface : SwitchFeature() {
+    override val defaultEnabled: Boolean = false
+    override fun onEnable() = HideContacts.onSurfaceChanged()
+    override fun onDisable() = HideContacts.onSurfaceChanged()
+}
+
 /**
  * 各面开关变化后的统一收尾：刷新一次会话列表让结果立刻可见。
  *
