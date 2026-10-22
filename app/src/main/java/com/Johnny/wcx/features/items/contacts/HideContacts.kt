@@ -40,6 +40,7 @@ import com.Johnny.wcx.features.api.ui.WeMainActivityBeautifyApi
 import com.Johnny.wcx.features.core.ClickableFeature
 import com.Johnny.wcx.features.core.Feature
 
+import com.Johnny.wcx.features.items.contacts.hidecontacts.installBlockHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installListHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installMomentsHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installSchedules
@@ -63,6 +64,7 @@ import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.android.getSystemService
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.now
+import org.json.JSONArray
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.ref.WeakReference
@@ -220,6 +222,7 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
         WeMainActivityBeautifyApi.methodDoOnCreate.hookAfter {
             migrateLegacyHiddenParentRef()
+            migrateLegacyLists()
 
             val context = thisObject!!.reflekt()
                 .firstField { type { it isSubclassOf Activity::class } }
@@ -271,6 +274,13 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         // hidecontacts/HideContactsLists.kt.
 
         installListHooks()
+
+        // --- block entering chat / viewing profile of a hidden contact ---
+        //
+        // Both rely on isHiddenNow(), so they follow the same temporary-show escape hatch.
+        // See hidecontacts/HideContactsBlock.kt.
+
+        installBlockHooks()
 
         // --- global search results the SQL rewriter cannot reach ---
         //
@@ -420,6 +430,52 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     // its next message resets parentRef) even after the user un-hides it, since un-hiding only drops
     // it from our set and never touched parentRef. Scoped to our hidden set so we don't disturb rows
     // hidden by 显隐全部对话 (ToggleAllConversationsVisibility), which shares the same marker.
+    // 已下线的旧实现留下的名单键，仅用于一次性迁移到 KEY_CONTACTS，迁移后立即清空。
+    private const val LEGACY_LIST_KEY_OBJECT = "maskList"
+    private const val LEGACY_LIST_KEY_WXIDS = "secret_friend_wxids"
+    private const val KEY_LIST_MIGRATED = "hidden_contacts_list_migrated"
+
+    /**
+     * 把旧实现留下的名单合并进 [hiddenContacts]。
+     *
+     * 旧实现有两代存储：更早的字符串集合，和后来的 JSON 数组（每项一个对象，用户名在 maskId 字段）。
+     * 两者都可能非空，因此都读、取并集。任一步解析失败就不写迁移标记，下次启动重试。
+     */
+    private fun migrateLegacyLists() {
+        if (WePrefs.getBoolOrFalse(KEY_LIST_MIGRATED)) return
+
+        val collected = LinkedHashSet<String>()
+
+        runCatching {
+            WePrefs.getStringSetOrDef(LEGACY_LIST_KEY_WXIDS, emptySet()).forEach {
+                if (it.isNotBlank()) collected.add(it)
+            }
+        }.onFailure { WeLogger.w(TAG, "读取旧字符串集合名单失败", it) }
+
+        runCatching {
+            val raw = WePrefs.getStringOrDef(LEGACY_LIST_KEY_OBJECT, "")
+            if (raw.isNotBlank()) {
+                val array = JSONArray(raw)
+                for (i in 0 until array.length()) {
+                    val id = array.optJSONObject(i)?.optString("maskId").orEmpty()
+                    if (id.isNotBlank()) collected.add(id)
+                }
+            }
+        }.onFailure { WeLogger.w(TAG, "解析旧 JSON 名单失败", it) }
+
+        if (collected.isNotEmpty()) {
+            val merged = hiddenContacts + collected
+            if (merged.size != hiddenContacts.size) {
+                hiddenContacts = merged
+                WeLogger.d(TAG, "migrated ${collected.size} legacy entries into hidden list")
+            }
+        }
+
+        WePrefs.putBool(KEY_LIST_MIGRATED, true)
+        WePrefs.putStringSet(LEGACY_LIST_KEY_WXIDS, emptySet())
+        WePrefs.putString(LEGACY_LIST_KEY_OBJECT, "")
+    }
+
     private fun migrateLegacyHiddenParentRef() {
         if (WePrefs.getBoolOrFalse(KEY_LEGACY_MIGRATED)) return
 
@@ -461,6 +517,12 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     private var autoRejectVoip by prefOption("hide_auto_reject", false)
     private var tripleClickTitle by prefOption("hide_triple_click_title", false)
+
+    /** 名单内联系人禁止进入聊天页（默认关闭，按需开启）。 */
+    internal var blockChatEnabled by prefOption("hide_block_chat", false)
+
+    /** 名单内联系人禁止查看资料页（默认关闭，按需开启）。 */
+    internal var blockProfileEnabled by prefOption("hide_block_profile", false)
 
     // Three taps within this window on the main-screen title register as a triple-click.
     // Matches WeChat's own double-tap detection threshold (f8/r8 tab listener, 300 ms),
@@ -571,6 +633,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                 title = { Text("隐藏联系人") },
                 text = {
                     var autoRejectVoipInput by remember { mutableStateOf(autoRejectVoip) }
+                    var blockChatInput by remember { mutableStateOf(blockChatEnabled) }
+                    var blockProfileInput by remember { mutableStateOf(blockProfileEnabled) }
                     var tripleClickTitleInput by remember { mutableStateOf(tripleClickTitle) }
 
                     SegmentedColumn(contentPadding = PaddingValues(0.dp)) {
@@ -605,6 +669,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                },
+                            )
+                        }
+                        item {
+                            SwitchWidget(
+                                iconPlaceholder = false,
+                                title = "禁止进入聊天",
+                                description = "点开名单内联系人的聊天页会立即退出；临时显示期间可正常进入",
+                                checked = blockChatInput,
+                                onCheckedChange = {
+                                    blockChatInput = it
+                                    blockChatEnabled = it
+                                },
+                            )
+                        }
+                        item {
+                            SwitchWidget(
+                                iconPlaceholder = false,
+                                title = "禁止查看资料",
+                                description = "点开名单内联系人的资料页会立即退出；临时显示期间可正常查看",
+                                checked = blockProfileInput,
+                                onCheckedChange = {
+                                    blockProfileInput = it
+                                    blockProfileEnabled = it
                                 },
                             )
                         }
