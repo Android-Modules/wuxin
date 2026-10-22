@@ -309,7 +309,7 @@ private fun diagSteps(): List<DiagStep> = listOf(
 
 private fun repairSteps(): List<DiagStep> = listOf(
     DiagStep("开启总开关与功能") {
-        val master = runCatching { Preferences.secretFriendMasterEnabled = true }.isSuccess
+        val master = runCatching { Preferences.hiddenContactsMasterEnabled = true }.isSuccess
         val enabled = runCatching { HideContacts.isEnabled = true }.isSuccess
         listOf(
             DiagRow(
@@ -357,14 +357,14 @@ private fun repairSteps(): List<DiagStep> = listOf(
 private fun masterRows(): List<DiagRow> {
     val out = mutableListOf<DiagRow>()
 
-    val master = runCatching { Preferences.secretFriendMasterEnabled }.getOrDefault(false)
+    val master = runCatching { Preferences.hiddenContactsMasterEnabled }.getOrDefault(false)
     out += DiagRow(
         "密友功能总开关", "总开关与名单", if (master) "开启" else "关闭", master,
         "分类总开关。关闭后本分类下所有功能都不加载（各开关状态保留）。",
         actionLabel = if (master) null else "开启",
         action = if (master) null else {
             {
-                Preferences.secretFriendMasterEnabled = true
+                Preferences.hiddenContactsMasterEnabled = true
                 "总开关已开启"
             }
         },
