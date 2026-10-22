@@ -41,14 +41,24 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     private var pattern by prefOption("recall_pattern", $$"「$sender」尝试撤回上一条消息 (已阻止)")
     private var timeFormat by prefOption("recall_time_format", "yyyy/MM/dd HH:mm:ss")
 
-    /** 提示样式：0 = 灰色小字（原样式，内容由上面的提示格式决定）；1 = 粉色「已撤回」标签。 */
-    private var recallStyle by prefOption("recall_style", 0)
+    /**
+     * 撤回样式：0 = 灰色小字系统提示（原样式）；1 = 气泡右侧圆角标签（默认）。
+     * 两种样式都保留，用户自己选。
+     */
+    private var recallStyle by prefOption("recall_style", 1)
+
+    /** 圆角标签上的文字（默认「已撤回」）。 */
+    private var tagText by prefOption("recall_tag_text", "已撤回")
 
     private val NAME_REGEX = Regex("([\"「])(.*?)([」\"])")
 
     override fun onEnable() {
         WeXmlParserApi.addListener(this)
         WeDatabaseListenerApi.addListener(this)
+        if (recallStyle == 1) {
+            RecallTagRenderer.labelText = tagText
+            RecallTagRenderer.install()
+        }
     }
 
     override fun onDisable() {
@@ -69,9 +79,10 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         }
 
         if (result[TYPE_KEY] == "revokemsg") {
+            val revokeMsgId = result[".sysmsg.revokemsg.newmsgid"] as? String ?: return
             val cursor = WeDatabaseApi.rawQuery(
                 "SELECT type,content,talker,createTime,lvbuffer,msgId,msgSvrId,isSend FROM message WHERE msgSvrId = ?",
-                arrayOf(result[".sysmsg.revokemsg.newmsgid"] as? String? ?: return)
+                arrayOf(revokeMsgId)
             )
 
             cursor.use { cursor ->
@@ -94,24 +105,27 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     val senderName = match?.groupValues?.get(2) ?: if (recallOutgoing) "自己" else ""
                     if (senderName.isEmpty() && recallStyle != 1) return
 
-                    val noticeText = if (recallStyle == 1) {
-                        // 样式 2：紧跟在被撤回消息下方的一条粉色「已撤回」标签。
-                        // 系统消息的 TextView 按 HTML 渲染，所以用 font 标签上色。
-                        "<font color=\"#FF2D6B\"><b>已撤回</b></font>"
+                    if (recallStyle == 1) {
+                        // 样式 2：不插系统消息，记下这条消息，由 RecallTagRenderer 在气泡右侧
+                        // 画一个圆角小标签。原文保留在库里，所以标签挂在原消息上。
+                        RecallTagRenderer.labelText = tagText
+                        RecallTagRenderer.install()
+                        RecallTagRenderer.rememberBlocked(revokeMsgId, msgInfo.humanReadableRepr)
                     } else {
-                        pattern
+                        // 样式 1：灰色小字系统提示（原样式）。
+                        val noticeText = pattern
                             .replace($$"$sender", senderName)
                             .replace($$"$sendTime", formatEpoch(createTime, timeFormat))
                             .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
                             .replace($$"$content", msgInfo.humanReadableRepr)
-                    }
 
-                    WeMessageApi.createSimpleMsgInfoAndInsert(
-                        MessageType.SYSTEM.code,
-                        talker,
-                        noticeText,
-                        createTime + 1
-                    )
+                        WeMessageApi.createSimpleMsgInfoAndInsert(
+                            MessageType.SYSTEM.code,
+                            talker,
+                            noticeText,
+                            createTime + 1
+                        )
+                    }
 
                     WeLogger.i(TAG, "blocked message revoke")
                 }
@@ -189,6 +203,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             var patternInput by remember { mutableStateOf(pattern) }
             var timeFormatInput by remember { mutableStateOf(timeFormat) }
             var recallStyleInput by remember { mutableStateOf(recallStyle) }
+            var tagTextInput by remember { mutableStateOf(tagText) }
             AlertDialogContent(
                 title = { Text("防撤回") },
                 text = {
@@ -203,16 +218,33 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         )
 
                         ListItem(
-                            modifier = Modifier.clickable { recallStyleInput = if (recallStyleInput == 1) 0 else 1 },
+                            modifier = Modifier.clickable { recallStyleInput = 1 },
                             trailingContent = {
                                 Switch(checked = recallStyleInput == 1, onCheckedChange = null)
                             },
-                            supportingContent = { Text("开启后用粉色「已撤回」标签取代灰色小字（文字格式与时间格式不再生效）") },
-                            headlineContent = { Text("粉色「已撤回」标签") },
+                            supportingContent = { Text("在被撤回的那条消息气泡右侧显示一个圆角小标签（默认样式）") },
+                            headlineContent = { Text("样式二：气泡右侧圆角标签") },
                         )
 
                         TextField(
-                            label = { Text("提示格式") },
+                            value = tagTextInput,
+                            onValueChange = { tagTextInput = it.take(6) },
+                            label = { Text("标签文字（默认「已撤回」）") },
+                            supportingText = { Text("建议 2~4 个字，太长会挤压气泡") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        ListItem(
+                            modifier = Modifier.clickable { recallStyleInput = 0 },
+                            trailingContent = {
+                                Switch(checked = recallStyleInput == 0, onCheckedChange = null)
+                            },
+                            supportingContent = { Text("插一条灰色小字系统提示，内容与时间格式由下面两项决定") },
+                            headlineContent = { Text("样式一：灰色小字提示") },
+                        )
+
+                        TextField(
+                            label = { Text("提示格式（仅样式一）") },
                             supportingText = { Text($$"可使用占位符 $sender, $sendTime, $recallTime, $content") },
                             value = patternInput,
                             onValueChange = { patternInput = it },
@@ -222,7 +254,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         TextField(
                             value = timeFormatInput,
                             onValueChange = { timeFormatInput = it },
-                            label = { Text("时间格式") },
+                            label = { Text("时间格式（仅样式一）") },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -234,6 +266,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         pattern = patternInput
                         timeFormat = timeFormatInput
                         recallStyle = recallStyleInput
+                        tagText = tagTextInput.ifBlank { "已撤回" }
+                        RecallTagRenderer.labelText = tagText
+                        if (recallStyle == 1) RecallTagRenderer.install()
                         onDismiss()
                     }) { Text("确定") }
                 })
