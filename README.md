@@ -206,13 +206,6 @@ cd deobf && ./run_deobf.sh
 
 ---
 
-## 💝 捐赠
-
-如果您觉得这个项目对您有帮助，欢迎支持一下～
-
-[![爱发电](https://img.shields.io/badge/爱发电-支持一下-ff69b4?style=for-the-badge)](https://www.ifdian.net/a/Johnny520)
-
----
 
 ## 🌐 相关链接
 
