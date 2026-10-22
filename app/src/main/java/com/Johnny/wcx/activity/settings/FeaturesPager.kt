@@ -59,9 +59,12 @@ fun FeaturesPager(onOpenCategory: (String) -> Unit) {
     val query = queryState.text.toString()
     val searching = query.isNotBlank()
 
-    // 设置页搜索覆盖全部带开关的功能。
+    // 设置页搜索**显式排除「密友功能」分类**：避免随便搜一个词就把密友入口暴露出来。
+    // 密友入口固定在分类列表最后一项；直接进入分类仍可看到其中的开关。
     val searchableItems = remember {
-        FeaturesProvider.ALL_HOOK_ITEMS.filterIsInstance<SwitchFeature>()
+        FeaturesProvider.ALL_HOOK_ITEMS
+            .filterIsInstance<SwitchFeature>()
+            .filter { item -> "密友功能" !in item.categories }
     }
     val filteredItems = remember(query) {
         if (!searching) emptyList()

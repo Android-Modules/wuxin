@@ -41,6 +41,7 @@ import com.Johnny.wcx.features.core.ClickableFeature
 import com.Johnny.wcx.features.core.Feature
 
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installBlockHooks
+import com.Johnny.wcx.features.items.contacts.hidecontacts.installSearchCommandHook
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installListHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installMomentsHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installSchedules
@@ -58,6 +59,7 @@ import com.Johnny.wcx.ui.content.TextButton
 import com.Johnny.wcx.ui.content.m3.BaseWidget
 import com.Johnny.wcx.ui.content.m3.SegmentedColumn
 import com.Johnny.wcx.ui.content.m3.SwitchWidget
+import com.Johnny.wcx.ui.content.m3.TextFieldDialogWidget
 import com.Johnny.wcx.ui.utils.showComposeDialog
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.WeLogger
@@ -77,7 +79,8 @@ import java.lang.reflect.Modifier as JavaModifier
 
 @Feature(
     name = "隐藏联系人",
-    categories = ["联系人与群组"],
+    // 双分类：密友功能（设置列表最后一项，隐蔽入口）与联系人与群组（原入口）。
+    categories = ["联系人与群组", "密友功能"],
     description = "隐藏指定的联系人"
 )
 object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputBarListener,
@@ -283,6 +286,10 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
         installBlockHooks()
 
+        // --- 主页搜索框指令（默认 #wm#）：临时显示 N 分钟，到期自动恢复 ---
+
+        installSearchCommandHook()
+
         // --- global search results the SQL rewriter cannot reach ---
         //
         // 群聊内搜索成员 and 共同群聊好友建议. See hidecontacts/HideContactsSearch.kt.
@@ -343,6 +350,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         chattingUi = null
         WeChatInputBarApi.removeListener(this)
         WeDatabaseListenerApi.removeListener(this)
+        autoRestoreHandler.removeCallbacksAndMessages(null)
+        autoRestorePosted = false
         temporarilyShown = false
         WeConversationApi.reloadConversations()
     }
@@ -351,6 +360,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
      * Toggles the temporary-show state. Mirrors the `#show` / `#hide` input-bar commands for
      * use by gesture-based triggers (e.g. triple-clicking the main-screen title).
      */
+    /**
+     * 临时显示 [minutes] 分钟后自动恢复隐藏（搜索框指令触发）。
+     *
+     * 与 `#show` / `#hide` / 三击标题共用 [temporarilyShown]，重复触发会重置计时。
+     */
+    internal fun temporarilyShowFor(context: Context, minutes: Int) {
+        temporarilyShown = true
+        WeConversationApi.reloadConversations()
+
+        val app = context.applicationContext
+        val delayMs = minutes.coerceIn(1, 1440) * 60_000L
+        if (autoRestorePosted) autoRestoreHandler.removeCallbacksAndMessages(null)
+        autoRestorePosted = true
+        autoRestoreHandler.postDelayed({
+            autoRestorePosted = false
+            if (!temporarilyShown) return@postDelayed
+            temporarilyShown = false
+            WeConversationApi.reloadConversations()
+            runCatching { showToast(app, "临时显示已到期，已恢复隐藏") }
+        }, delayMs)
+
+        showToast(app, "已临时显示 $minutes 分钟，输入 #hide 可提前恢复隐藏")
+    }
+
     internal fun toggleTemporarilyShown(context: Context) {
         if (temporarilyShown) {
             temporarilyShown = false
@@ -509,6 +542,10 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     private var temporarilyShown = false
 
+    // 搜索框指令的到期自动恢复计时（主进程主线程）。
+    private val autoRestoreHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var autoRestorePosted = false
+
     /**
      * The predicate every hook should use: a contact counts as hidden only while the temporary-show
      * escape hatch (`#show` / triple-tap title) is off.
@@ -528,6 +565,12 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     /** 名单内联系人禁止查看资料页（默认关闭，按需开启）。 */
     internal var blockProfileEnabled by prefOption("hide_block_profile", false)
+
+    /** 主页搜索框临时显示指令（默认 #wm#，可自定义）。 */
+    internal var searchCommandText by prefOption("hide_search_command", "#wm#")
+
+    /** 搜索框指令触发的临时显示时长（分钟，到期自动恢复隐藏）。 */
+    internal var searchCommandMinutes by prefOption("hide_search_command_minutes", 30)
 
     // Three taps within this window on the main-screen title register as a triple-click.
     // Matches WeChat's own double-tap detection threshold (f8/r8 tab listener, 300 ms),
@@ -726,6 +769,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 },
+                            )
+                        }
+                        item {
+                            TextFieldDialogWidget(
+                                title = "搜索框临时显示指令",
+                                value = searchCommandText,
+                                onValueChange = { searchCommandText = it },
+                                dialogTitle = "在主页搜索框输入该指令即可临时显示（默认为 #wm#）",
+                                confirmLabel = "确定",
+                                dismissLabel = "取消",
+                            )
+                        }
+                        item {
+                            TextFieldDialogWidget(
+                                title = "搜索框临时显示时长(分钟)",
+                                value = searchCommandMinutes.toString(),
+                                onValueChange = { raw ->
+                                    raw.filter { it.isDigit() }.take(4).toIntOrNull()?.let {
+                                        searchCommandMinutes = it
+                                    }
+                                },
+                                dialogTitle = "临时显示时长（分钟，1–1440）",
+                                confirmLabel = "确定",
+                                dismissLabel = "取消",
                             )
                         }
                         item {

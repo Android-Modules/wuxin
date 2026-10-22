@@ -165,6 +165,8 @@ val FEATURE_CATEGORIES = listOf(
     "批量操作" to MaterialSymbols.Outlined.Checklist,
     "首页右上角菜单" to MaterialSymbols.Outlined.Add_circle,
     "联系人详情页面" to MaterialSymbols.Outlined.Contact_page,
+    // 「密友功能」刻意放在列表**最后**（隐蔽入口，不显眼）；搜索页会排除该分类。
+    "密友功能" to MaterialSymbols.Outlined.Contacts,
 )
 
 // ---------------------------------------------------------------------------
