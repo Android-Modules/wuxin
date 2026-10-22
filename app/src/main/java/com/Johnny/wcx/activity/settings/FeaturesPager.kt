@@ -196,7 +196,7 @@ fun FeaturesPager(onOpenCategory: (String) -> Unit) {
 fun CategoryDetailScreen(
     categoryName: String,
     onBack: () -> Unit,
-    onOpenSecretFriendDiagnostics: () -> Unit,
+    onOpenHiddenContactsDiagnostics: () -> Unit,
 ) {
     val items = remember(categoryName) {
         FeaturesProvider.ALL_HOOK_ITEMS.filter { categoryName in it.categories }
@@ -207,15 +207,15 @@ fun CategoryDetailScreen(
         }
     }
 
-    val isSecretFriendCategory = categoryName == SwitchFeature.SECRET_FRIEND_CATEGORY
+    val isMasterSwitchCategory = categoryName == SwitchFeature.CATEGORY_WITH_MASTER_SWITCH
     var masterEnabled by remember(categoryName) {
-        mutableStateOf(Preferences.secretFriendMasterEnabled)
+        mutableStateOf(Preferences.hiddenContactsMasterEnabled)
     }
 
     // 总开关：切换后立即对该分类下所有开关生效（各功能自身开关状态保留）。
     fun applyMasterSwitch(next: Boolean) {
         masterEnabled = next
-        Preferences.secretFriendMasterEnabled = next
+        Preferences.hiddenContactsMasterEnabled = next
         items.filterIsInstance<SwitchFeature>().forEach { feature ->
             feature.isEnabled = next && WePrefs.getBoolOrFalse(feature.name)
         }
@@ -238,7 +238,7 @@ fun CategoryDetailScreen(
     ) {
         if (items.isEmpty()) return@MiuixListScaffold
 
-        if (isSecretFriendCategory) {
+        if (isMasterSwitchCategory) {
             item {
                 Column(
                     modifier = Modifier
@@ -270,7 +270,7 @@ fun CategoryDetailScreen(
             }
         }
 
-        if (isSecretFriendCategory) {
+        if (isMasterSwitchCategory) {
             item {
                 Card(
                     modifier = Modifier
@@ -280,7 +280,7 @@ fun CategoryDetailScreen(
                     ArrowPreference(
                         title = "密友功能诊断",
                         startAction = {},
-                        onClick = { onOpenSecretFriendDiagnostics() },
+                        onClick = { onOpenHiddenContactsDiagnostics() },
                     )
                 }
             }

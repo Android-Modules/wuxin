@@ -67,6 +67,7 @@ import com.Johnny.wcx.utils.android.getSystemService
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.now
 import android.util.Base64
+import com.Johnny.wcx.constants.Preferences
 import org.json.JSONArray
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
@@ -468,6 +469,7 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     // KEY_CONTACTS，迁移后立即清空。
     private const val LEGACY_KEY_JSON_B64 = "bWFza0xpc3Q="
     private const val LEGACY_KEY_SET_B64 = "c2VjcmV0X2ZyaWVuZF93eGlkcw=="
+    private const val LEGACY_KEY_MASTER_B64 = "c2VjcmV0X2ZyaWVuZF9tYXN0ZXJfZW5hYmxlZA=="
     private const val KEY_LIST_MIGRATED = "hidden_contacts_list_migrated"
 
     private fun legacyKey(encoded: String): String =
@@ -508,6 +510,13 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                 WeLogger.d(TAG, "migrated ${collected.size} legacy entries into hidden list")
             }
         }
+
+        // 分类总开关的旧键：旧版若被用户关掉过（false），把它带到新键上（新键默认 true）。
+        runCatching {
+            if (!WePrefs.getBoolOrDef(legacyKey(LEGACY_KEY_MASTER_B64), true)) {
+                WePrefs.putBool(Preferences.HIDDEN_CONTACTS_MASTER_ENABLED, false)
+            }
+        }.onFailure { WeLogger.w(TAG, "迁移旧分类总开关失败", it) }
 
         WePrefs.putBool(KEY_LIST_MIGRATED, true)
         WePrefs.putStringSet(legacyKey(LEGACY_KEY_SET_B64), emptySet())

@@ -79,7 +79,7 @@ internal data class DiagRow(
 private class DiagStep(val title: String, val run: () -> List<DiagRow>)
 
 @Composable
-fun SecretFriendDiagnosticsScreen(onBack: () -> Unit) {
+fun HiddenContactsDiagnosticsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollBehavior = MiuixScrollBehavior()
@@ -217,7 +217,7 @@ fun SecretFriendDiagnosticsScreen(onBack: () -> Unit) {
                             val text = if (rows.isEmpty()) "（尚无诊断结果）"
                             else rows.joinToString("\n") { "${it.label}：${it.value}" }
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            clipboard?.setPrimaryClip(ClipData.newPlainText("WCX 密友诊断", text))
+                            clipboard?.setPrimaryClip(ClipData.newPlainText("WCX 隐藏联系人诊断", text))
                             showToast("诊断信息已复制")
                         }
                     }

@@ -183,7 +183,7 @@ private sealed interface SettingsNavTarget {
     data object ScriptManager : SettingsNavTarget
     data object ScriptDiagnostics : SettingsNavTarget
     data object ScriptFaq : SettingsNavTarget
-    data object SecretFriendDiagnostics : SettingsNavTarget
+    data object HiddenContactsDiagnostics : SettingsNavTarget
     data object ModuleHealth : SettingsNavTarget
 }
 
@@ -207,7 +207,7 @@ private fun SettingsRoot(onFinish: () -> Unit) {
             is SettingsNavTarget.Category -> CategoryDetailScreen(
                 categoryName = screen.name,
                 onBack = pop,
-                onOpenSecretFriendDiagnostics = { push(SettingsNavTarget.SecretFriendDiagnostics) },
+                onOpenHiddenContactsDiagnostics = { push(SettingsNavTarget.HiddenContactsDiagnostics) },
             )
 
             SettingsNavTarget.License -> LicenseScreen(
@@ -226,7 +226,7 @@ private fun SettingsRoot(onFinish: () -> Unit) {
 
             SettingsNavTarget.ScriptFaq -> ScriptFaqScreen(onBack = pop)
 
-            SettingsNavTarget.SecretFriendDiagnostics -> SecretFriendDiagnosticsScreen(onBack = pop)
+            SettingsNavTarget.HiddenContactsDiagnostics -> HiddenContactsDiagnosticsScreen(onBack = pop)
 
             SettingsNavTarget.ModuleHealth -> ModuleHealthScreen(onBack = pop)
         }
