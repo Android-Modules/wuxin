@@ -138,6 +138,32 @@ object HideContactsNotifications : ApiFeature(), IResolveDex {
      *
      * `HideContacts.temporarilyShown` is intentionally *not* consulted — see the class KDoc.
      */
+    /**
+     * 「密友消息震动」：通知被吞掉时补一次短震动，让用户知道名单内有人发消息。
+     *
+     * 震动是选配（默认关），失败一律静默——通知抑制本身不能被它影响。
+     * 用 application context 取 Vibrator，只调一次 createOneShot，不持有引用。
+     */
+    private fun vibrateIfRequested() {
+        if (!WePrefs.getBoolOrDef(HideContacts.SURFACE_VIBRATE, false)) return
+        runCatching {
+            val ctx = com.Johnny.wcx.utils.HostInfo.application
+            val vibrator = ctx.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                ?: return
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(
+                    android.os.VibrationEffect.createOneShot(
+                        180L,
+                        android.os.VibrationEffect.DEFAULT_AMPLITUDE,
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(180L)
+            }
+        }.onFailure { WeLogger.w(TAG, "密友消息震动失败", it) }
+    }
+
     private fun isSuppressed(wxId: String): Boolean =
         WePrefs.getBoolOrDef(HideContacts.technicalId, false) && wxId in HideContacts.hiddenContacts
 
@@ -158,6 +184,7 @@ object HideContactsNotifications : ApiFeature(), IResolveDex {
             val talker = args[1] as? String ?: return@hookBefore
             if (!isSuppressed(talker)) return@hookBefore
             WeLogger.i(TAG, "suppressing message notification from $talker")
+            vibrateIfRequested()
             result = null
         }
 
@@ -170,6 +197,7 @@ object HideContactsNotifications : ApiFeature(), IResolveDex {
             val userName = args[1] as? String ?: return@hookBefore
             if (!isSuppressed(userName)) return@hookBefore
             WeLogger.i(TAG, "suppressing LightPush notification from $userName")
+            vibrateIfRequested()
             result = null
         }
     }
