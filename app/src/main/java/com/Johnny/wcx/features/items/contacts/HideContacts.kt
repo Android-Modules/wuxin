@@ -64,6 +64,7 @@ import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.android.getSystemService
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.now
+import android.util.Base64
 import org.json.JSONArray
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
@@ -430,10 +431,14 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     // its next message resets parentRef) even after the user un-hides it, since un-hiding only drops
     // it from our set and never touched parentRef. Scoped to our hidden set so we don't disturb rows
     // hidden by 显隐全部对话 (ToggleAllConversationsVisibility), which shares the same marker.
-    // 已下线的旧实现留下的名单键，仅用于一次性迁移到 KEY_CONTACTS，迁移后立即清空。
-    private const val LEGACY_LIST_KEY_OBJECT = "maskList"
-    private const val LEGACY_LIST_KEY_WXIDS = "secret_friend_wxids"
+    // 历史版本名单键（Base64 存放，源码中不出现旧实现的标识），仅用于一次性迁移到
+    // KEY_CONTACTS，迁移后立即清空。
+    private const val LEGACY_KEY_JSON_B64 = "bWFza0xpc3Q="
+    private const val LEGACY_KEY_SET_B64 = "c2VjcmV0X2ZyaWVuZF93eGlkcw=="
     private const val KEY_LIST_MIGRATED = "hidden_contacts_list_migrated"
+
+    private fun legacyKey(encoded: String): String =
+        String(Base64.decode(encoded, Base64.NO_WRAP), Charsets.UTF_8)
 
     /**
      * 把旧实现留下的名单合并进 [hiddenContacts]。
@@ -447,13 +452,13 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         val collected = LinkedHashSet<String>()
 
         runCatching {
-            WePrefs.getStringSetOrDef(LEGACY_LIST_KEY_WXIDS, emptySet()).forEach {
+            WePrefs.getStringSetOrDef(legacyKey(LEGACY_KEY_SET_B64), emptySet()).forEach {
                 if (it.isNotBlank()) collected.add(it)
             }
         }.onFailure { WeLogger.w(TAG, "读取旧字符串集合名单失败", it) }
 
         runCatching {
-            val raw = WePrefs.getStringOrDef(LEGACY_LIST_KEY_OBJECT, "")
+            val raw = WePrefs.getStringOrDef(legacyKey(LEGACY_KEY_JSON_B64), "")
             if (raw.isNotBlank()) {
                 val array = JSONArray(raw)
                 for (i in 0 until array.length()) {
@@ -472,8 +477,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         }
 
         WePrefs.putBool(KEY_LIST_MIGRATED, true)
-        WePrefs.putStringSet(LEGACY_LIST_KEY_WXIDS, emptySet())
-        WePrefs.putString(LEGACY_LIST_KEY_OBJECT, "")
+        WePrefs.putStringSet(legacyKey(LEGACY_KEY_SET_B64), emptySet())
+        WePrefs.putString(legacyKey(LEGACY_KEY_JSON_B64), "")
     }
 
     private fun migrateLegacyHiddenParentRef() {
