@@ -97,7 +97,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     val noticeText = if (recallStyle == 1) {
                         // 样式 2：紧跟在被撤回消息下方的一条粉色「已撤回」标签。
                         // 系统消息的 TextView 按 HTML 渲染，所以用 font 标签上色。
-                        "<font color=\"#FF6B9D\">已撤回</font>"
+                        "<font color=\"#FF2D6B\"><b>已撤回</b></font>"
                     } else {
                         pattern
                             .replace($$"$sender", senderName)
