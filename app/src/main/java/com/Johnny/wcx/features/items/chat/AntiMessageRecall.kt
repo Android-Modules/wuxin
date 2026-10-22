@@ -219,9 +219,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         ListItem(
                             modifier = Modifier.clickable { recallStyleInput = 1 },
                             trailingContent = {
-                                Switch(checked = recallStyleInput == 1, onCheckedChange = null)
+                                Text(if (recallStyleInput == 1) "✓ 已选" else "")
                             },
-                            supportingContent = { Text("在被撤回的消息气泡右侧显示一个圆角小标签，同时保留下面的灰色小字提示（默认样式）") },
+                            supportingContent = { Text("气泡右侧显示圆角「已撤回」标签，下方灰色小字提示（含时间）照常显示") },
                             headlineContent = { Text("样式二：气泡右侧圆角标签") },
                         )
 
@@ -236,7 +236,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         ListItem(
                             modifier = Modifier.clickable { recallStyleInput = 0 },
                             trailingContent = {
-                                Switch(checked = recallStyleInput == 0, onCheckedChange = null)
+                                Text(if (recallStyleInput == 0) "✓ 已选" else "")
                             },
                             supportingContent = { Text("只显示灰色小字系统提示，内容与时间格式由下面两项决定") },
                             headlineContent = { Text("样式一：灰色小字提示") },
