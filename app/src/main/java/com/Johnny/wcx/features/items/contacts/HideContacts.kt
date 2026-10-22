@@ -40,6 +40,8 @@ import com.Johnny.wcx.features.api.ui.WeMainActivityBeautifyApi
 import com.Johnny.wcx.features.core.ClickableFeature
 import com.Johnny.wcx.features.core.Feature
 
+import com.Johnny.wcx.features.items.contacts.hidecontacts.installBlockHooks
+import com.Johnny.wcx.features.items.contacts.hidecontacts.installSearchCommandHook
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installListHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installMomentsHooks
 import com.Johnny.wcx.features.items.contacts.hidecontacts.installSchedules
@@ -57,12 +59,16 @@ import com.Johnny.wcx.ui.content.TextButton
 import com.Johnny.wcx.ui.content.m3.BaseWidget
 import com.Johnny.wcx.ui.content.m3.SegmentedColumn
 import com.Johnny.wcx.ui.content.m3.SwitchWidget
+import com.Johnny.wcx.ui.content.m3.TextFieldDialogWidget
 import com.Johnny.wcx.ui.utils.showComposeDialog
 import com.Johnny.wcx.utils.HostInfo
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.android.getSystemService
 import com.Johnny.wcx.utils.android.showToast
 import com.Johnny.wcx.utils.now
+import android.util.Base64
+import com.Johnny.wcx.constants.Preferences
+import org.json.JSONArray
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.ref.WeakReference
@@ -74,7 +80,8 @@ import java.lang.reflect.Modifier as JavaModifier
 
 @Feature(
     name = "隐藏联系人",
-    categories = ["联系人与群组"],
+    // 双分类：密友功能（设置列表最后一项，隐蔽入口）与联系人与群组（原入口）。
+    categories = ["联系人与群组", "密友功能"],
     description = "隐藏指定的联系人"
 )
 object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputBarListener,
@@ -220,6 +227,7 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
         WeMainActivityBeautifyApi.methodDoOnCreate.hookAfter {
             migrateLegacyHiddenParentRef()
+            migrateLegacyLists()
 
             val context = thisObject!!.reflekt()
                 .firstField { type { it isSubclassOf Activity::class } }
@@ -271,6 +279,17 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         // hidecontacts/HideContactsLists.kt.
 
         installListHooks()
+
+        // --- block entering chat / viewing profile of a hidden contact ---
+        //
+        // Both rely on isHiddenNow(), so they follow the same temporary-show escape hatch.
+        // See hidecontacts/HideContactsBlock.kt.
+
+        installBlockHooks()
+
+        // --- 主页搜索框指令（默认 #wm#）：临时显示 N 分钟，到期自动恢复 ---
+
+        installSearchCommandHook()
 
         // --- global search results the SQL rewriter cannot reach ---
         //
@@ -332,6 +351,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
         chattingUi = null
         WeChatInputBarApi.removeListener(this)
         WeDatabaseListenerApi.removeListener(this)
+        autoRestoreHandler.removeCallbacksAndMessages(null)
+        autoRestorePosted = false
         temporarilyShown = false
         WeConversationApi.reloadConversations()
     }
@@ -340,6 +361,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
      * Toggles the temporary-show state. Mirrors the `#show` / `#hide` input-bar commands for
      * use by gesture-based triggers (e.g. triple-clicking the main-screen title).
      */
+    /**
+     * 临时显示 [minutes] 分钟后自动恢复隐藏（搜索框指令触发）。
+     *
+     * 与 `#show` / `#hide` / 三击标题共用 [temporarilyShown]，重复触发会重置计时。
+     */
+    internal fun temporarilyShowFor(context: Context, minutes: Int) {
+        temporarilyShown = true
+        WeConversationApi.reloadConversations()
+
+        val app = context.applicationContext
+        val delayMs = minutes.coerceIn(1, 1440) * 60_000L
+        if (autoRestorePosted) autoRestoreHandler.removeCallbacksAndMessages(null)
+        autoRestorePosted = true
+        autoRestoreHandler.postDelayed({
+            autoRestorePosted = false
+            if (!temporarilyShown) return@postDelayed
+            temporarilyShown = false
+            WeConversationApi.reloadConversations()
+            runCatching { showToast(app, "临时显示已到期，已恢复隐藏") }
+        }, delayMs)
+
+        showToast(app, "已临时显示 $minutes 分钟，输入 #hide 可提前恢复隐藏")
+    }
+
     internal fun toggleTemporarilyShown(context: Context) {
         if (temporarilyShown) {
             temporarilyShown = false
@@ -420,6 +465,64 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     // its next message resets parentRef) even after the user un-hides it, since un-hiding only drops
     // it from our set and never touched parentRef. Scoped to our hidden set so we don't disturb rows
     // hidden by 显隐全部对话 (ToggleAllConversationsVisibility), which shares the same marker.
+    // 历史版本名单键（Base64 存放，源码中不出现旧实现的标识），仅用于一次性迁移到
+    // KEY_CONTACTS，迁移后立即清空。
+    private const val LEGACY_KEY_JSON_B64 = "bWFza0xpc3Q="
+    private const val LEGACY_KEY_SET_B64 = "c2VjcmV0X2ZyaWVuZF93eGlkcw=="
+    private const val LEGACY_KEY_MASTER_B64 = "c2VjcmV0X2ZyaWVuZF9tYXN0ZXJfZW5hYmxlZA=="
+    private const val KEY_LIST_MIGRATED = "hidden_contacts_list_migrated"
+
+    private fun legacyKey(encoded: String): String =
+        String(Base64.decode(encoded, Base64.NO_WRAP), Charsets.UTF_8)
+
+    /**
+     * 把旧实现留下的名单合并进 [hiddenContacts]。
+     *
+     * 旧实现有两代存储：更早的字符串集合，和后来的 JSON 数组（每项一个对象，用户名在 maskId 字段）。
+     * 两者都可能非空，因此都读、取并集。任一步解析失败就不写迁移标记，下次启动重试。
+     */
+    private fun migrateLegacyLists() {
+        if (WePrefs.getBoolOrFalse(KEY_LIST_MIGRATED)) return
+
+        val collected = LinkedHashSet<String>()
+
+        runCatching {
+            WePrefs.getStringSetOrDef(legacyKey(LEGACY_KEY_SET_B64), emptySet()).forEach {
+                if (it.isNotBlank()) collected.add(it)
+            }
+        }.onFailure { WeLogger.w(TAG, "读取旧字符串集合名单失败", it) }
+
+        runCatching {
+            val raw = WePrefs.getStringOrDef(legacyKey(LEGACY_KEY_JSON_B64), "")
+            if (raw.isNotBlank()) {
+                val array = JSONArray(raw)
+                for (i in 0 until array.length()) {
+                    val id = array.optJSONObject(i)?.optString("maskId").orEmpty()
+                    if (id.isNotBlank()) collected.add(id)
+                }
+            }
+        }.onFailure { WeLogger.w(TAG, "解析旧 JSON 名单失败", it) }
+
+        if (collected.isNotEmpty()) {
+            val merged = hiddenContacts + collected
+            if (merged.size != hiddenContacts.size) {
+                hiddenContacts = merged
+                WeLogger.d(TAG, "migrated ${collected.size} legacy entries into hidden list")
+            }
+        }
+
+        // 分类总开关的旧键：旧版若被用户关掉过（false），把它带到新键上（新键默认 true）。
+        runCatching {
+            if (!WePrefs.getBoolOrDef(legacyKey(LEGACY_KEY_MASTER_B64), true)) {
+                WePrefs.putBool(Preferences.HIDDEN_CONTACTS_MASTER_ENABLED, false)
+            }
+        }.onFailure { WeLogger.w(TAG, "迁移旧分类总开关失败", it) }
+
+        WePrefs.putBool(KEY_LIST_MIGRATED, true)
+        WePrefs.putStringSet(legacyKey(LEGACY_KEY_SET_B64), emptySet())
+        WePrefs.putString(legacyKey(LEGACY_KEY_JSON_B64), "")
+    }
+
     private fun migrateLegacyHiddenParentRef() {
         if (WePrefs.getBoolOrFalse(KEY_LEGACY_MIGRATED)) return
 
@@ -448,6 +551,10 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     private var temporarilyShown = false
 
+    // 搜索框指令的到期自动恢复计时（主进程主线程）。
+    private val autoRestoreHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var autoRestorePosted = false
+
     /**
      * The predicate every hook should use: a contact counts as hidden only while the temporary-show
      * escape hatch (`#show` / triple-tap title) is off.
@@ -459,8 +566,20 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     internal val autoRejectVoipEnabled: Boolean get() = autoRejectVoip
 
-    private var autoRejectVoip by prefOption("hide_auto_reject", false)
-    private var tripleClickTitle by prefOption("hide_triple_click_title", false)
+    internal var autoRejectVoip by prefOption("hide_auto_reject", false)
+    internal var tripleClickTitle by prefOption("hide_triple_click_title", false)
+
+    /** 名单内联系人禁止进入聊天页（默认关闭，按需开启）。 */
+    internal var blockChatEnabled by prefOption("hide_block_chat", false)
+
+    /** 名单内联系人禁止查看资料页（默认关闭，按需开启）。 */
+    internal var blockProfileEnabled by prefOption("hide_block_profile", false)
+
+    /** 主页搜索框临时显示指令（默认 #wm#，可自定义）。 */
+    internal var searchCommandText by prefOption("hide_search_command", "#wm#")
+
+    /** 搜索框指令触发的临时显示时长（分钟，到期自动恢复隐藏）。 */
+    internal var searchCommandMinutes by prefOption("hide_search_command_minutes", 30)
 
     // Three taps within this window on the main-screen title register as a triple-click.
     // Matches WeChat's own double-tap detection threshold (f8/r8 tab listener, 300 ms),
@@ -571,6 +690,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                 title = { Text("隐藏联系人") },
                 text = {
                     var autoRejectVoipInput by remember { mutableStateOf(autoRejectVoip) }
+                    var blockChatInput by remember { mutableStateOf(blockChatEnabled) }
+                    var blockProfileInput by remember { mutableStateOf(blockProfileEnabled) }
                     var tripleClickTitleInput by remember { mutableStateOf(tripleClickTitle) }
 
                     SegmentedColumn(contentPadding = PaddingValues(0.dp)) {
@@ -611,6 +732,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                         item {
                             SwitchWidget(
                                 iconPlaceholder = false,
+                                title = "禁止进入聊天",
+                                description = "点开名单内联系人的聊天页会立即退出；临时显示期间可正常进入",
+                                checked = blockChatInput,
+                                onCheckedChange = {
+                                    blockChatInput = it
+                                    blockChatEnabled = it
+                                },
+                            )
+                        }
+                        item {
+                            SwitchWidget(
+                                iconPlaceholder = false,
+                                title = "禁止查看资料",
+                                description = "点开名单内联系人的资料页会立即退出；临时显示期间可正常查看",
+                                checked = blockProfileInput,
+                                onCheckedChange = {
+                                    blockProfileInput = it
+                                    blockProfileEnabled = it
+                                },
+                            )
+                        }
+                        item {
+                            SwitchWidget(
+                                iconPlaceholder = false,
                                 title = "自动拒绝音视频通话",
                                 description = "关闭时仅隐藏来电，对方会一直响到超时；开启后立即向对方发送拒接",
                                 checked = autoRejectVoipInput,
@@ -633,6 +778,30 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 },
+                            )
+                        }
+                        item {
+                            TextFieldDialogWidget(
+                                title = "搜索框临时显示指令",
+                                value = searchCommandText,
+                                onValueChange = { searchCommandText = it },
+                                dialogTitle = "在主页搜索框输入该指令即可临时显示（默认为 #wm#）",
+                                confirmLabel = "确定",
+                                dismissLabel = "取消",
+                            )
+                        }
+                        item {
+                            TextFieldDialogWidget(
+                                title = "搜索框临时显示时长(分钟)",
+                                value = searchCommandMinutes.toString(),
+                                onValueChange = { raw ->
+                                    raw.filter { it.isDigit() }.take(4).toIntOrNull()?.let {
+                                        searchCommandMinutes = it
+                                    }
+                                },
+                                dialogTitle = "临时显示时长（分钟，1–1440）",
+                                confirmLabel = "确定",
+                                dismissLabel = "取消",
                             )
                         }
                         item {
