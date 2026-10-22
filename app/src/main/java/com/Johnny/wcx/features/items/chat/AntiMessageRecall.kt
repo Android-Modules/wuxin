@@ -105,27 +105,26 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     val senderName = match?.groupValues?.get(2) ?: if (recallOutgoing) "自己" else ""
                     if (senderName.isEmpty() && recallStyle != 1) return
 
+                    // 系统提示两种样式都要插：它承载时间与自定义文案，样式二只是"多"一个圆角标签。
+                    val noticeText = pattern
+                        .replace($$"$sender", senderName)
+                        .replace($$"$sendTime", formatEpoch(createTime, timeFormat))
+                        .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
+                        .replace($$"$content", msgInfo.humanReadableRepr)
+
                     if (recallStyle == 1) {
-                        // 样式 2：不插系统消息，记下这条消息，由 RecallTagRenderer 在气泡右侧
-                        // 画一个圆角小标签。原文保留在库里，所以标签挂在原消息上。
+                        // 样式 2：在气泡右侧额外画一个圆角标签；原文保留在库里，所以标签挂在原消息上。
                         RecallTagRenderer.labelText = tagText
                         RecallTagRenderer.install()
                         RecallTagRenderer.rememberBlocked(revokeMsgId, msgInfo.humanReadableRepr)
-                    } else {
-                        // 样式 1：灰色小字系统提示（原样式）。
-                        val noticeText = pattern
-                            .replace($$"$sender", senderName)
-                            .replace($$"$sendTime", formatEpoch(createTime, timeFormat))
-                            .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
-                            .replace($$"$content", msgInfo.humanReadableRepr)
-
-                        WeMessageApi.createSimpleMsgInfoAndInsert(
-                            MessageType.SYSTEM.code,
-                            talker,
-                            noticeText,
-                            createTime + 1
-                        )
                     }
+
+                    WeMessageApi.createSimpleMsgInfoAndInsert(
+                        MessageType.SYSTEM.code,
+                        talker,
+                        noticeText,
+                        createTime + 1
+                    )
 
                     WeLogger.i(TAG, "blocked message revoke")
                 }
@@ -222,7 +221,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                             trailingContent = {
                                 Switch(checked = recallStyleInput == 1, onCheckedChange = null)
                             },
-                            supportingContent = { Text("在被撤回的那条消息气泡右侧显示一个圆角小标签（默认样式）") },
+                            supportingContent = { Text("在被撤回的消息气泡右侧显示一个圆角小标签，同时保留下面的灰色小字提示（默认样式）") },
                             headlineContent = { Text("样式二：气泡右侧圆角标签") },
                         )
 
@@ -239,12 +238,12 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                             trailingContent = {
                                 Switch(checked = recallStyleInput == 0, onCheckedChange = null)
                             },
-                            supportingContent = { Text("插一条灰色小字系统提示，内容与时间格式由下面两项决定") },
+                            supportingContent = { Text("只显示灰色小字系统提示，内容与时间格式由下面两项决定") },
                             headlineContent = { Text("样式一：灰色小字提示") },
                         )
 
                         TextField(
-                            label = { Text("提示格式（仅样式一）") },
+                            label = { Text("提示格式（两种样式都生效）") },
                             supportingText = { Text($$"可使用占位符 $sender, $sendTime, $recallTime, $content") },
                             value = patternInput,
                             onValueChange = { patternInput = it },
@@ -254,7 +253,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         TextField(
                             value = timeFormatInput,
                             onValueChange = { timeFormatInput = it },
-                            label = { Text("时间格式（仅样式一）") },
+                            label = { Text("时间格式（两种样式都生效）") },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
