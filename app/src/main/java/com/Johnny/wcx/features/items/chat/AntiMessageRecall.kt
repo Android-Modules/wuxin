@@ -41,6 +41,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     private var pattern by prefOption("recall_pattern", $$"「$sender」尝试撤回上一条消息 (已阻止)")
     private var timeFormat by prefOption("recall_time_format", "yyyy/MM/dd HH:mm:ss")
 
+    /** 提示样式：0 = 灰色小字（原样式，内容由上面的提示格式决定）；1 = 粉色「已撤回」标签。 */
+    private var recallStyle by prefOption("recall_style", 0)
+
     private val NAME_REGEX = Regex("([\"「])(.*?)([」\"])")
 
     override fun onEnable() {
@@ -87,18 +90,26 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     val replaceMsg = result[".sysmsg.revokemsg.replacemsg"] as? String?
                         ?: return
                     val match = NAME_REGEX.find(replaceMsg)
-                    val senderName = match?.groupValues?.get(2) ?: if (recallOutgoing) "自己" else return
+                    // 粉色标签样式不依赖发送者名字，所以这里不再直接 return（否则该样式下部分撤回拦不住）。
+                    val senderName = match?.groupValues?.get(2) ?: if (recallOutgoing) "自己" else ""
+                    if (senderName.isEmpty() && recallStyle != 1) return
 
-                    val interceptNotice = pattern
-                        .replace($$"$sender", senderName)
-                        .replace($$"$sendTime", formatEpoch(createTime, timeFormat))
-                        .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
-                        .replace($$"$content", msgInfo.humanReadableRepr)
+                    val noticeText = if (recallStyle == 1) {
+                        // 样式 2：紧跟在被撤回消息下方的一条粉色「已撤回」标签。
+                        // 系统消息的 TextView 按 HTML 渲染，所以用 font 标签上色。
+                        "<font color=\"#FF2D6B\"><b>已撤回</b></font>"
+                    } else {
+                        pattern
+                            .replace($$"$sender", senderName)
+                            .replace($$"$sendTime", formatEpoch(createTime, timeFormat))
+                            .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
+                            .replace($$"$content", msgInfo.humanReadableRepr)
+                    }
 
                     WeMessageApi.createSimpleMsgInfoAndInsert(
                         MessageType.SYSTEM.code,
                         talker,
-                        interceptNotice,
+                        noticeText,
                         createTime + 1
                     )
 
@@ -177,6 +188,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             var recallOutgoingInput by remember { mutableStateOf(recallOutgoing) }
             var patternInput by remember { mutableStateOf(pattern) }
             var timeFormatInput by remember { mutableStateOf(timeFormat) }
+            var recallStyleInput by remember { mutableStateOf(recallStyle) }
             AlertDialogContent(
                 title = { Text("防撤回") },
                 text = {
@@ -188,6 +200,15 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                             },
                             supportingContent = { Text("是否对自己发出的消息也生效 (已支持: 在数据库更新层拦截自己撤回)") },
                             headlineContent = { Text("防撤回自己的消息") },
+                        )
+
+                        ListItem(
+                            modifier = Modifier.clickable { recallStyleInput = if (recallStyleInput == 1) 0 else 1 },
+                            trailingContent = {
+                                Switch(checked = recallStyleInput == 1, onCheckedChange = null)
+                            },
+                            supportingContent = { Text("开启后用粉色「已撤回」标签取代灰色小字（文字格式与时间格式不再生效）") },
+                            headlineContent = { Text("粉色「已撤回」标签") },
                         )
 
                         TextField(
@@ -212,6 +233,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         recallOutgoing = recallOutgoingInput
                         pattern = patternInput
                         timeFormat = timeFormatInput
+                        recallStyle = recallStyleInput
                         onDismiss()
                     }) { Text("确定") }
                 })
