@@ -980,13 +980,13 @@ private fun hiddenContactsSection(): List<HealthItem> {
         "临时显示期间，名单内所有人对你可见（#show 或三击标题触发、#hide 恢复）。",
         inactive = temp,
     )
-    val blockChat = runCatching { HideContacts.blockChatEnabled }.getOrDefault(false)
+    val blockChat = runCatching { HideContacts.surfaceOn(HideContacts.SURFACE_BLOCK_CHAT) }.getOrDefault(false)
     out += HealthItem(
         "禁止进入聊天", section, if (blockChat) "开启" else "关闭", true,
         "开启后点开名单内联系人的聊天页会立即退出；临时显示期间放行。",
         inactive = !blockChat,
     )
-    val blockProfile = runCatching { HideContacts.blockProfileEnabled }.getOrDefault(false)
+    val blockProfile = runCatching { HideContacts.surfaceOn(HideContacts.SURFACE_BLOCK_PROFILE) }.getOrDefault(false)
     out += HealthItem(
         "禁止查看资料", section, if (blockProfile) "开启" else "关闭", true,
         "开启后点开名单内联系人的资料页会立即退出；临时显示期间放行。",

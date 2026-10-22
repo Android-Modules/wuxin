@@ -13,7 +13,11 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.outlined.Chevron_right
@@ -91,6 +96,31 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     private const val KEY_CONTACTS = "hidden_contacts"
 
+    // ── 隐藏面标识 ────────────────────────────────────────────────────────────
+    //
+    // 每个面同时是「设置页里的一个开关」和「Hook 内部判断用的键」：SwitchFeature 把开关状态
+    // 以 name 为键存进 WePrefs，这里用同一串中文当键，开关与生效条件天然同步。
+    // 见 HiddenContactSurfaces.kt。
+
+    const val SURFACE_CONVERSATIONS = "主页会话隐藏"
+    const val SURFACE_CONTACTS = "通讯录隐藏"
+    const val SURFACE_GROUP_MEMBERS = "群成员选择器隐藏"
+    const val SURFACE_FAVORITES = "收藏列表隐藏"
+    const val SURFACE_FINDER_LIKE = "视频号互动隐藏"
+    const val SURFACE_SEARCH = "搜索结果隐藏"
+    const val SURFACE_MOMENTS = "朋友圈隐藏"
+    const val SURFACE_MOMENTS_INLINE = "朋友圈互动隐藏"
+    const val SURFACE_VOIP = "音视频通话隐藏"
+    const val SURFACE_BLOCK_CHAT = "禁止进入聊天"
+    const val SURFACE_BLOCK_PROFILE = "禁止查看资料"
+    const val SURFACE_MUTE = "自动免打扰"
+    const val SURFACE_NEW_FRIENDS = "新的朋友隐藏"
+    const val SURFACE_UNREAD = "未读角标隐藏"
+    const val SURFACE_AUTO_REJECT_VOIP = "自动拒绝音视频通话"
+
+    /** 某个隐藏面是否开启（默认开启，升级上来的用户行为不变）。 */
+    internal fun surfaceOn(surface: String): Boolean = WePrefs.getBoolOrDef(surface, true)
+
     // One-time flag: older versions hid chats by writing parentRef='hidden_conv_parent'. Once we've
     // cleared that stale marker for the current hidden set (so #show / un-hide work again), we never
     // need to re-check. New hides rely purely on the query-time filter and never set the marker.
@@ -105,8 +135,10 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
             // overwrite a mute the user set themselves. See the design doc.
             val newlyHidden = value - WePrefs.getStringSetOrDef(KEY_CONTACTS, emptySet())
             WePrefs.putStringSet(KEY_CONTACTS, value)
-            for (convId in newlyHidden) {
-                WeConversationApi.setDnd(convId, true)
+            if (surfaceOn(SURFACE_MUTE)) {
+                for (convId in newlyHidden) {
+                    WeConversationApi.setDnd(convId, true)
+                }
             }
             WeConversationApi.reloadConversations()
         }
@@ -564,16 +596,9 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
     /** For SQL rewriters, which bail wholesale rather than testing individual wxids. */
     internal val isTemporarilyShown: Boolean get() = temporarilyShown
 
-    internal val autoRejectVoipEnabled: Boolean get() = autoRejectVoip
+    internal val autoRejectVoipEnabled: Boolean get() = surfaceOn(SURFACE_AUTO_REJECT_VOIP)
 
-    internal var autoRejectVoip by prefOption("hide_auto_reject", false)
     internal var tripleClickTitle by prefOption("hide_triple_click_title", false)
-
-    /** 名单内联系人禁止进入聊天页（默认关闭，按需开启）。 */
-    internal var blockChatEnabled by prefOption("hide_block_chat", false)
-
-    /** 名单内联系人禁止查看资料页（默认关闭，按需开启）。 */
-    internal var blockProfileEnabled by prefOption("hide_block_profile", false)
 
     /** 主页搜索框临时显示指令（默认 #wm#，可自定义）。 */
     internal var searchCommandText by prefOption("hide_search_command", "#wm#")
@@ -689,18 +714,21 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
             AlertDialogContent(
                 title = { Text("隐藏联系人") },
                 text = {
-                    var autoRejectVoipInput by remember { mutableStateOf(autoRejectVoip) }
-                    var blockChatInput by remember { mutableStateOf(blockChatEnabled) }
-                    var blockProfileInput by remember { mutableStateOf(blockProfileEnabled) }
                     var tripleClickTitleInput by remember { mutableStateOf(tripleClickTitle) }
 
-                    SegmentedColumn(contentPadding = PaddingValues(0.dp)) {
-                        item {
-                            BaseWidget(
-                                iconPlaceholder = false,
-                                title = "配置隐藏列表",
-                                description = "点击配置联系人隐藏列表",
-                                onClick = {
+                    // 普通可滚动 Column，而不是 LazyColumn/SegmentedColumn：AlertDialog 的文本区
+                    // 高度不受约束，LazyColumn 在这种容器里测量会溢出，表现为条目互相压字、
+                    // 底部被截断且滑不动。固定上限 + verticalScroll 才稳定。
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        BaseWidget(
+                            iconPlaceholder = false,
+                            title = "配置隐藏列表",
+                            description = "点击配置联系人隐藏列表",
+                            onClick = {
                                 showComposeDialog(context) {
                                     ContactsSelector(
                                         title = ("选择要隐藏的联系人"),
@@ -719,103 +747,58 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
                                         onDismiss()
                                     }
                                 }
-                                },
-                                trailingContent = {
-                                    Icon(
-                                        MaterialSymbols.Outlined.Chevron_right,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                            )
-                        }
-                        item {
-                            SwitchWidget(
-                                iconPlaceholder = false,
-                                title = "禁止进入聊天",
-                                description = "点开名单内联系人的聊天页会立即退出；临时显示期间可正常进入",
-                                checked = blockChatInput,
-                                onCheckedChange = {
-                                    blockChatInput = it
-                                    blockChatEnabled = it
-                                },
-                            )
-                        }
-                        item {
-                            SwitchWidget(
-                                iconPlaceholder = false,
-                                title = "禁止查看资料",
-                                description = "点开名单内联系人的资料页会立即退出；临时显示期间可正常查看",
-                                checked = blockProfileInput,
-                                onCheckedChange = {
-                                    blockProfileInput = it
-                                    blockProfileEnabled = it
-                                },
-                            )
-                        }
-                        item {
-                            SwitchWidget(
-                                iconPlaceholder = false,
-                                title = "自动拒绝音视频通话",
-                                description = "关闭时仅隐藏来电，对方会一直响到超时；开启后立即向对方发送拒接",
-                                checked = autoRejectVoipInput,
-                                onCheckedChange = {
-                                    autoRejectVoipInput = it
-                                    autoRejectVoip = it
-                                },
-                            )
-                        }
-                        item {
-                            BaseWidget(
-                                iconPlaceholder = false,
-                                title = "定时显示/隐藏",
-                                description = "到点自动临时显示或恢复隐藏，不会改动隐藏列表",
-                                onClick = { showSchedulesDialog(context) },
-                                trailingContent = {
-                                    Icon(
-                                        MaterialSymbols.Outlined.Chevron_right,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                            )
-                        }
-                        item {
-                            TextFieldDialogWidget(
-                                title = "搜索框临时显示指令",
-                                value = searchCommandText,
-                                onValueChange = { searchCommandText = it },
-                                dialogTitle = "在主页搜索框输入该指令即可临时显示（默认为 #wm#）",
-                                confirmLabel = "确定",
-                                dismissLabel = "取消",
-                            )
-                        }
-                        item {
-                            TextFieldDialogWidget(
-                                title = "搜索框临时显示时长(分钟)",
-                                value = searchCommandMinutes.toString(),
-                                onValueChange = { raw ->
-                                    raw.filter { it.isDigit() }.take(4).toIntOrNull()?.let {
-                                        searchCommandMinutes = it
-                                    }
-                                },
-                                dialogTitle = "临时显示时长（分钟，1–1440）",
-                                confirmLabel = "确定",
-                                dismissLabel = "取消",
-                            )
-                        }
-                        item {
-                            SwitchWidget(
-                                iconPlaceholder = false,
-                                title = "三击标题切换显隐",
-                                description = "连续三击主页顶部标题栏，可临时显示或恢复隐藏联系人",
-                                checked = tripleClickTitleInput,
-                                onCheckedChange = {
-                                    tripleClickTitleInput = it
-                                    tripleClickTitle = it
-                                },
-                            )
-                        }
+                            },
+                            trailingContent = {
+                                Icon(
+                                    MaterialSymbols.Outlined.Chevron_right,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                        BaseWidget(
+                            iconPlaceholder = false,
+                            title = "定时显示/隐藏",
+                            description = "到点自动临时显示或恢复隐藏，不会改动隐藏列表",
+                            onClick = { showSchedulesDialog(context) },
+                            trailingContent = {
+                                Icon(
+                                    MaterialSymbols.Outlined.Chevron_right,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                        SwitchWidget(
+                            iconPlaceholder = false,
+                            title = "三击标题切换显隐",
+                            description = "连续三击主页顶部标题栏，可临时显示或恢复隐藏联系人",
+                            checked = tripleClickTitleInput,
+                            onCheckedChange = {
+                                tripleClickTitleInput = it
+                                tripleClickTitle = it
+                            },
+                        )
+                        TextFieldDialogWidget(
+                            title = "搜索框临时显示指令",
+                            value = searchCommandText,
+                            onValueChange = { searchCommandText = it },
+                            dialogTitle = "在主页搜索框输入该指令即可临时显示（默认为 #wm#）",
+                            confirmLabel = "确定",
+                            dismissLabel = "取消",
+                        )
+                        TextFieldDialogWidget(
+                            title = "搜索框临时显示时长(分钟)",
+                            value = searchCommandMinutes.toString(),
+                            onValueChange = { raw ->
+                                raw.filter { it.isDigit() }.take(4).toIntOrNull()?.let {
+                                    searchCommandMinutes = it
+                                }
+                            },
+                            dialogTitle = "临时显示时长（分钟，1–1440）",
+                            confirmLabel = "确定",
+                            dismissLabel = "取消",
+                        )
                     }
                 },
                 dismissButton = {
