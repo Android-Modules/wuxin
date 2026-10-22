@@ -37,8 +37,8 @@ private fun HideContacts.installBlockStartActivityGuard() {
         val profileTarget = intent.getStringExtra("Contact_User")
 
         val blocked = when {
-            blockChatEnabled && chatTarget != null -> isHiddenNow(chatTarget)
-            blockProfileEnabled && profileTarget != null -> isHiddenNow(profileTarget)
+            surfaceOn(SURFACE_BLOCK_CHAT) && chatTarget != null -> isHiddenNow(chatTarget)
+            surfaceOn(SURFACE_BLOCK_PROFILE) && profileTarget != null -> isHiddenNow(profileTarget)
             else -> false
         }
         if (!blocked) return@addListener
@@ -64,7 +64,7 @@ private fun HideContacts.installBlockChatOnCreateGuard() {
     }
 
     chatOnCreate.hookAfter {
-        if (!blockChatEnabled) return@hookAfter
+        if (!surfaceOn(SURFACE_BLOCK_CHAT)) return@hookAfter
         val activity = thisObject as? Activity ?: return@hookAfter
         val wxId = activity.intent?.getStringExtra("Chat_User") ?: return@hookAfter
         if (!isHiddenNow(wxId)) return@hookAfter
@@ -87,7 +87,7 @@ private fun HideContacts.installBlockProfileOnCreateGuard() {
     }
 
     profileOnCreate.hookAfter {
-        if (!blockProfileEnabled) return@hookAfter
+        if (!surfaceOn(SURFACE_BLOCK_PROFILE)) return@hookAfter
         val activity = thisObject as? Activity ?: return@hookAfter
         val wxId = activity.intent?.getStringExtra("Contact_User") ?: return@hookAfter
         if (!isHiddenNow(wxId)) return@hookAfter

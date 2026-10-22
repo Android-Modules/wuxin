@@ -38,6 +38,8 @@ import com.Johnny.wcx.constants.Preferences
 import com.Johnny.wcx.features.api.core.WeConversationApi
 import com.Johnny.wcx.features.api.core.WeDatabaseApi
 import com.Johnny.wcx.features.items.contacts.HideContacts
+import com.Johnny.wcx.features.items.contacts.hidecontacts.BlockHiddenChatSurface
+import com.Johnny.wcx.features.items.contacts.hidecontacts.BlockHiddenProfileSurface
 import com.Johnny.wcx.utils.android.showToast
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.ui.miuix.ActionRow
@@ -402,7 +404,7 @@ private fun masterRows(): List<DiagRow> {
 private fun surfaceRows(): List<DiagRow> {
     val out = mutableListOf<DiagRow>()
 
-    val blockChat = runCatching { HideContacts.blockChatEnabled }.getOrDefault(false)
+    val blockChat = runCatching { HideContacts.surfaceOn(HideContacts.SURFACE_BLOCK_CHAT) }.getOrDefault(false)
     out += DiagRow(
         "禁止进入聊天", "隐藏与拦截", if (blockChat) "开启" else "关闭", true,
         "开启后点开名单内联系人的聊天页会立即退出；临时显示期间放行。" +
@@ -410,12 +412,12 @@ private fun surfaceRows(): List<DiagRow> {
         actionLabel = if (blockChat) "关闭" else "开启",
         action = {
             val next = !blockChat
-            HideContacts.blockChatEnabled = next
+            BlockHiddenChatSurface.applyToggle(next)
             if (next) "已开启禁止进入聊天" else "已关闭禁止进入聊天"
         },
     )
 
-    val blockProfile = runCatching { HideContacts.blockProfileEnabled }.getOrDefault(false)
+    val blockProfile = runCatching { HideContacts.surfaceOn(HideContacts.SURFACE_BLOCK_PROFILE) }.getOrDefault(false)
     out += DiagRow(
         "禁止查看资料", "隐藏与拦截", if (blockProfile) "开启" else "关闭", true,
         "开启后点开名单内联系人的资料页会立即退出；临时显示期间放行。" +
@@ -423,7 +425,7 @@ private fun surfaceRows(): List<DiagRow> {
         actionLabel = if (blockProfile) "关闭" else "开启",
         action = {
             val next = !blockProfile
-            HideContacts.blockProfileEnabled = next
+            BlockHiddenProfileSurface.applyToggle(next)
             if (next) "已开启禁止查看资料" else "已关闭禁止查看资料"
         },
     )
