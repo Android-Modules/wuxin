@@ -557,8 +557,8 @@ object HideContacts : ClickableFeature(), IResolveDex, WeChatInputBarApi.IInputB
 
     internal val autoRejectVoipEnabled: Boolean get() = autoRejectVoip
 
-    private var autoRejectVoip by prefOption("hide_auto_reject", false)
-    private var tripleClickTitle by prefOption("hide_triple_click_title", false)
+    internal var autoRejectVoip by prefOption("hide_auto_reject", false)
+    internal var tripleClickTitle by prefOption("hide_triple_click_title", false)
 
     /** 名单内联系人禁止进入聊天页（默认关闭，按需开启）。 */
     internal var blockChatEnabled by prefOption("hide_block_chat", false)
