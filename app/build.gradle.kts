@@ -333,7 +333,9 @@ dependencies {
 
     implementation(project(":libs:common:bsh"))
 
-    compileOnly(libs.legacyxposed.api)
+    // 内置 Xposed API 82：Maven Central / 腾讯镜像都没有该构件，只能从 api.xposed.info 拉，
+    // 而该源在 CI 上偶发超时会导致整个 master 构建失败（缓存丢失时必现）。内置后构建可复现。
+    compileOnly(files("libs/xposed-api-82.jar"))
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
     implementation(libs.dexkit)
