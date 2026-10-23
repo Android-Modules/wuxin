@@ -49,7 +49,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
      * 撤回样式：0 = 灰色小字系统提示（原样式）；1 = 气泡右侧圆角标签（默认）。
      * 两种样式都保留，用户自己选。
      */
-    private var recallStyle by prefOption("recall_style", 1)
+    // 默认样式一（原样式）：保守兜底——升级上来的用户看到的行为和以前一致，
+    // 想用气泡右侧圆角标签的再自己切到样式二。
+    private var recallStyle by prefOption("recall_style", 0)
 
     /** 圆角标签上的文字（默认「已撤回」）。 */
     private var tagText by prefOption("recall_tag_text", "已撤回")
