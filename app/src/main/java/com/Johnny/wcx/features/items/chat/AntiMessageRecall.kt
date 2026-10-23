@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -63,6 +65,7 @@ import com.Johnny.wcx.utils.strings.isGroupChatWxId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
@@ -130,6 +133,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     private const val STYLE_BADGE = "badge"
     private const val STYLE_LEGACY = "legacy"
     private const val LEGACY_TIME_FORMAT = "yyyy/MM/dd HH:mm:ss"
+
+    /** 迁移旧提示时单次最多扫描的系统消息条数（避免大账号上长时间卡在「正在迁移」）。 */
+    private const val MIGRATION_SCAN_LIMIT = 500
 
     // 「「xxx」尝试撤回上一条消息」的默认模板与微信自带撤回提示的名字提取
     private val NAME_REGEX = Regex("([\"「])(.*?)([」\"])")
@@ -588,6 +594,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     private sealed interface MigrationState {
         data object Idle : MigrationState
         data object Running : MigrationState
+        data class Progress(val done: Int, val total: Int) : MigrationState
         data class Done(val migrated: Int, val unmatched: Int) : MigrationState
         data object Failed : MigrationState
     }
@@ -598,7 +605,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
      * Finds the system-message rows rendered from the old notice template, records their original
      * messages into the new persisted list, and deletes the notice rows.
      */
-    private fun migrateLegacyNotices(): Pair<Int, Int> {
+    private fun migrateLegacyNotices(onProgress: (Int, Int) -> Unit = { _, _ -> }): Pair<Int, Int> {
         // The 提示格式 option was removed; the last stored template survives in MMKV and is what
         // old notices were rendered with. The MMKV key only exists if the user ever saved a custom
         // value (defaults are applied at read time), so fall back to the historical default.
@@ -608,8 +615,12 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             ?: throw IllegalStateException("invalid stored recall pattern")
 
         val notices = mutableListOf<LegacyNotice>()
+        // 只扫最近一批系统消息：message 表在长期使用的账号上非常大，全表扫描会让按钮
+        // 长时间停在「正在迁移…」。撤回提示本来就是近期的东西，取最近的够用。
         WeDatabaseApi.rawQuery(
-            "SELECT msgId, talker, content, createTime FROM message WHERE type = ${MessageType.SYSTEM.code}",
+            "SELECT msgId, talker, content, createTime FROM message " +
+                "WHERE type = ${MessageType.SYSTEM.code} " +
+                "ORDER BY createTime DESC LIMIT $MIGRATION_SCAN_LIMIT",
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 val content = cursor.getString(2) ?: continue
@@ -625,15 +636,16 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         var migrated = 0
         var unmatched = 0
         val newKeys = mutableSetOf<String>()
-        for (notice in notices) {
+        notices.forEachIndexed { index, notice ->
             val originalServerId = findOriginalMessage(notice)
             if (originalServerId == null) {
                 unmatched++
-                continue
+            } else {
+                newKeys += encodeKey(notice.talker, originalServerId)
+                WeDatabaseApi.delete("message", "msgId = ?", arrayOf(notice.msgId.toString()))
+                migrated++
             }
-            newKeys += encodeKey(notice.talker, originalServerId)
-            WeDatabaseApi.delete("message", "msgId = ?", arrayOf(notice.msgId.toString()))
-            migrated++
+            onProgress(index + 1, notices.size)
         }
 
         if (newKeys.isNotEmpty()) {
@@ -711,6 +723,13 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             AlertDialogContent(
                     title = { Text("防撤回") },
                     text = {
+                        // 设置项变多后必须能滚：AlertDialogContent 的正文区高度有上限，
+                        // 内容超出就会被裁掉（看起来像卡住/按钮压住输入框）。
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        ) {
                         SegmentedColumn(contentPadding = PaddingValues(0.dp)) {
                             item {
                                 SwitchWidget(
@@ -742,13 +761,16 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                 )
                             }
                             item {
-                                val migrating = migrationState == MigrationState.Running
+                                val migrating = migrationState is MigrationState.Running ||
+                                    migrationState is MigrationState.Progress
                                 BaseWidget(
                                     iconPlaceholder = false,
                                     title = "迁移旧版撤回提示",
                                     description = when (val state = migrationState) {
-                                        MigrationState.Idle -> "将旧版以系统消息插入的撤回提示迁移为新样式，并删除旧提示；重新进入会话后生效"
+                                        MigrationState.Idle -> "把旧版插入的系统提示转成新样式并删除旧提示（单次最多处理最近 $MIGRATION_SCAN_LIMIT 条）；重新进入会话后生效"
                                         MigrationState.Running -> "正在迁移…"
+                                        is MigrationState.Progress ->
+                                            "正在迁移… ${state.done}/${state.total}"
                                         is MigrationState.Done ->
                                             "已迁移 ${state.migrated} 条提示，${state.unmatched} 条未能定位原消息"
                                         MigrationState.Failed -> "迁移失败"
@@ -758,16 +780,29 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                     onClick = {
                                         migrationState = MigrationState.Running
                                         CoroutineScope(Dispatchers.IO).launch {
-                                            migrationState = runCatching { migrateLegacyNotices() }
-                                                .fold(
+                                            val outcome = runCatching {
+                                                migrateLegacyNotices { done, total ->
+                                                    withContext(Dispatchers.Main) {
+                                                        migrationState =
+                                                            MigrationState.Progress(done, total)
+                                                    }
+                                                }
+                                            }
+                                            withContext(Dispatchers.Main) {
+                                                migrationState = outcome.fold(
                                                     onSuccess = { (migrated, unmatched) ->
                                                         MigrationState.Done(migrated, unmatched)
                                                     },
                                                     onFailure = {
-                                                        WeLogger.e(TAG, "legacy notice migration failed", it)
+                                                        WeLogger.e(
+                                                            TAG,
+                                                            "legacy notice migration failed",
+                                                            it
+                                                        )
                                                         MigrationState.Failed
                                                     },
                                                 )
+                                            }
                                         }
                                     },
                                     trailingContent = {
@@ -853,6 +888,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                     )
                                 }
                             }
+                        }
                         }
                     },
                     dismissButton = {
