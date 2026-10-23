@@ -46,6 +46,8 @@ import android.os.Handler
 import android.os.Looper
 import de.robv.android.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
+import com.Johnny.wcx.dexkit.abc.IResolveDex
+import com.Johnny.wcx.dexkit.dsl.dexMethod
 import com.Johnny.wcx.features.api.core.WeDatabaseApi
 import com.Johnny.wcx.features.api.core.WeDatabaseListenerApi
 import com.Johnny.wcx.features.api.core.WeMessageApi
@@ -81,7 +83,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Feature(name = "防撤回", categories = ["聊天"], description = "阻止撤回消息")
 object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListener,
-    WeChatMessageViewApi.ICreateViewListener, WeDatabaseListenerApi.IUpdateListener {
+    WeChatMessageViewApi.ICreateViewListener, WeDatabaseListenerApi.IUpdateListener, IResolveDex {
 
     private const val TAG = "AntiMessageRecall"
 
@@ -157,6 +159,19 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         "M280,840 Q247,840 223.5,816.5 T200,760 V240 H160 V160 H360 V120 H600 V160 H800 V240 H760 V760 Q760,793 736.5,816.5 T680,840 H280 Z M680,240 H280 V760 H680 Z M360,680 H440 V320 H360 Z M520,680 H600 V320 H520 Z"
 
     private val badgeIconLight = "#C62828".toColorInt()
+    /**
+     * 微信处理「对方撤回」的入口: BigBallSysCmdMsgConsumer.doRevokeMsg(...)。
+     *
+     * 微信就是在这里删除原消息、改写会话记录并清理本地媒体的。只还原数据库字段救不回
+     * 「撤回前根本没下载过」的图片和语音, 所以直接跳过这个方法: 微信压根不认为发生过撤回,
+     * 拦截后的消息才和没撤回时完全一样 —— 图片能打开、语音能播放, 且什么时候点都行。
+     */
+    private val methodRevokeHandler by dexMethod {
+        matcher {
+            usingEqStrings("doRevokeMsg xmlSrvMsgId=%d talker=%s isGet=%s")
+        }
+    }
+
     private val badgeCircleLight = "#FFCDD2".toColorInt()
     private val badgeIconDark = "#EF9A9A".toColorInt()
     private val badgeCircleDark = "#3E1C1C".toColorInt()
@@ -177,7 +192,47 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         WeXmlParserApi.addListener(this)
         WeChatMessageViewApi.addListener(this)
         WeDatabaseListenerApi.addListener(this)
+        hookRevokeHandler()
         WeLogger.i(TAG, "enabled, style=$displayStyle, recallOutgoing=$recallOutgoing")
+    }
+
+    /**
+     * 拦住微信真正的撤回处理。
+     *
+     * 之前只有「XML 解析后置空 type」+「数据库改写还原」两层, 消息虽然留在会话里, 但微信已经把
+     * 原消息判成撤回了: 图片点开提示「图片已被清理」、语音播放失败（尤其是撤回前没点开过的媒体,
+     * 本地根本没有文件, 还原字段也下载不回来）。这里把处理入口整个跳过才是真正的防撤回。
+     */
+    private fun hookRevokeHandler() {
+        runCatching {
+            methodRevokeHandler.hookBefore { param ->
+                runCatching {
+                    val srvId = param.args.firstOrNull { it is Long } as? Long ?: 0L
+                    if (shouldBlockRevoke(srvId)) {
+                        param.result = null
+                        WeLogger.i(TAG, "blocked revoke handler (msgSvrId=$srvId)")
+                    } else {
+                        WeLogger.i(TAG, "let self revoke pass (msgSvrId=$srvId)")
+                    }
+                }.onFailure { WeLogger.w(TAG, "revoke handler hook body failed: ${it.message}") }
+            }
+        }.onFailure { WeLogger.e(TAG, "hook doRevokeMsg failed", it) }
+    }
+
+    /** 自己的消息是否也要拦：由「防撤回自己的消息」开关决定；查不到原消息时按「拦」处理。 */
+    private fun shouldBlockRevoke(msgSvrId: Long): Boolean {
+        if (msgSvrId == 0L) return true
+        val isSend = runCatching {
+            WeDatabaseApi.executeQuery(
+                "SELECT isSend FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(msgSvrId.toString())
+            ).firstOrNull()?.get("isSend")?.let { (it as? Number)?.toInt() == 1 }
+        }.getOrNull()
+        return when (isSend) {
+            null -> true
+            true -> recallOutgoing
+            false -> true
+        }
     }
 
     override fun onDisable() {
