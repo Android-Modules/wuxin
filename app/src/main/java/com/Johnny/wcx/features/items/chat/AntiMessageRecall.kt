@@ -278,23 +278,58 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             ).firstOrNull()
         }.getOrNull()
 
+    /**
+     * 撤回改写会动很多列: 除了 content / type, 还会清掉 imgPath、lvbuffer（图片与语音的媒体信息、
+     * 下载状态都在这里）、msgSource、flag 等。
+     *
+     * 只还原白名单里的几列时, 会话里能看到的文字是回来了, 但媒体那层读到的仍是「已被清理」——
+     * 图片点开提示「图片已被清理」、语音播放失败。所以这里按撤回前的整行快照还原所有列。
+     */
     private fun restoreRow(values: ContentValues, raw: Map<String, Any?>) {
-        val keys = arrayOf(
-            "content", "type", "isSend", "status",
-            "imgPath", "reserved", "transContent", "msgSource", "flag"
-        )
-        for (key in keys) {
-            val v = raw[key] ?: continue
+        var restored = 0
+        for ((key, v) in raw) {
+            if (key.equals("msgId", ignoreCase = true)) continue
+            if (v == null) continue
             when (v) {
-                is Long -> values.put(key, v)
-                is Int -> values.put(key, v)
-                is String -> values.put(key, v)
-                is Double -> values.put(key, v)
-                is Float -> values.put(key, v)
-                is ByteArray -> values.put(key, v)
-                is Boolean -> values.put(key, v)
+                is Long -> { values.put(key, v); restored++ }
+                is Int -> { values.put(key, v); restored++ }
+                is Short -> { values.put(key, v.toInt()); restored++ }
+                is Byte -> { values.put(key, v.toInt()); restored++ }
+                is String -> { values.put(key, v); restored++ }
+                is Double -> { values.put(key, v); restored++ }
+                is Float -> { values.put(key, v); restored++ }
+                is ByteArray -> { values.put(key, v); restored++ }
+                is Boolean -> { values.put(key, v); restored++ }
             }
         }
+        WeLogger.i(TAG, "restoreRow: restored $restored columns from snapshot")
+        logMediaAvailability(raw)
+    }
+
+    /**
+     * 还原后确认图片 / 语音的本地文件是否还在。
+     * 日志里 `media exists=false` 说明微信在撤回时把文件删了（只还原数据库救不回来）;
+     * `media exists=true` 说明文件还在, 之前打不开只是字段被清空。
+     */
+    private fun logMediaAvailability(raw: Map<String, Any?>) {
+        val path = raw["imgPath"] as? String ?: return
+        if (path.isBlank()) return
+        runCatching {
+            WeLogger.i(TAG, "restoreRow: media exists=${java.io.File(path).exists()} path=$path")
+        }
+    }
+
+    /** 撤回通知刚到、数据库还没被改写时, 把整行快照留给后面的数据库兜底还原用。 */
+    private fun cacheRawSnapshot(serverId: Long) {
+        if (serverId == 0L) return
+        runCatching {
+            val row = WeDatabaseApi.executeQuery(
+                "SELECT * FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(serverId.toString())
+            ).firstOrNull() ?: return
+            val msgId = (row["msgId"] as? Number)?.toLong() ?: return
+            rawRowCache[msgId] = row
+        }.onFailure { WeLogger.w(TAG, "cacheRawSnapshot failed: ${it.message}") }
     }
 
     override fun onParse(param: XC_MethodHook.MethodHookParam, result: MutableMap<String, Any?>) {
@@ -322,6 +357,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         WeLogger.i(TAG, "sender is self and not recall outgoing, skipping")
                         return
                     }
+
+                    // 此刻数据库还是撤回前的样子, 先把整行存下来, 后面即使微信改写了也能原样还原。
+                    runCatching { cacheRawSnapshot(msgInfo.serverId) }
 
                     result[TYPE_KEY] = null
 
