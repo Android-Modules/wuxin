@@ -211,12 +211,62 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     if (shouldBlockRevoke(srvId)) {
                         result = null
                         WeLogger.i(TAG, "blocked revoke handler (msgSvrId=$srvId)")
+                        // 跳过微信的处理后, 它连「这条消息被撤回了」都不会再记录, 所以标记要我们自己补。
+                        runCatching { markRecalled(srvId) }
+                            .onFailure { WeLogger.w(TAG, "markRecalled failed: ${it.message}") }
                     } else {
                         WeLogger.i(TAG, "let self revoke pass (msgSvrId=$srvId)")
                     }
                 }.onFailure { WeLogger.w(TAG, "revoke handler hook body failed: ${it.message}") }
             }
         }.onFailure { WeLogger.e(TAG, "hook doRevokeMsg failed", it) }
+    }
+
+    /**
+     * 微信被跳过之后不会再有「撤回」这一步, 徽标 / 旧版提示必须由我们自己标记。
+     * 这里按 msgSvrId 反查原消息, 取出会话与发送时间。
+     */
+    private fun markRecalled(msgSvrId: Long) {
+        if (msgSvrId == 0L) return
+        val row = runCatching {
+            WeDatabaseApi.executeQuery(
+                "SELECT msgId,talker,createTime,isSend,content FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(msgSvrId.toString())
+            ).firstOrNull()
+        }.getOrNull() ?: run {
+            WeLogger.w(TAG, "markRecalled: original message not found (msgSvrId=$msgSvrId)")
+            return
+        }
+
+        val talker = row["talker"] as? String ?: return
+        val msgId = (row["msgId"] as? Number)?.toLong() ?: 0L
+        val createTime = (row["createTime"] as? Number)?.toLong() ?: 0L
+        val isSend = (row["isSend"] as? Number)?.toInt() == 1
+        val content = row["content"] as? String ?: ""
+
+        if (displayStyle == STYLE_LEGACY) {
+            // 旧版样式: 插一条灰色系统提示, 原消息保持不动。
+            if (msgId == 0L || !noticeNotified.add(msgId)) return
+            val senderName = runCatching {
+                if (isSend) "自己"
+                else if (talker.isGroupChatWxId) "" else WeDatabaseApi.getDisplayName(talker)
+            }.getOrNull().orEmpty().ifBlank { if (isSend) "自己" else "有人" }
+            WeMessageApi.createSimpleMsgInfoAndInsert(
+                MessageType.SYSTEM.code,
+                talker,
+                buildLegacyNotice(senderName, createTime, content),
+                createTime + 1
+            )
+            WeLogger.i(TAG, "legacy notice inserted for msgSvrId=$msgSvrId")
+            return
+        }
+
+        // 新版徽标样式: 记进持久化列表 + 立刻刷新已经绑定的气泡。
+        val key = encodeKey(talker, msgSvrId)
+        recalledKeyCache = recalledKeyCache + key
+        recalledRecords = recalledKeyCache
+        refreshBoundViews(talker, msgSvrId)
+        WeLogger.i(TAG, "marked recalled: $key")
     }
 
     /** 自己的消息是否也要拦：由「防撤回自己的消息」开关决定；查不到原消息时按「拦」处理。 */
