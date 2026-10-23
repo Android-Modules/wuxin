@@ -2,6 +2,10 @@ package com.Johnny.wcx.features.items.chat
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.Switch
@@ -112,17 +116,21 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
                         .replace($$"$content", msgInfo.humanReadableRepr)
 
-                    if (recallStyle == 1) {
-                        // 样式 2：在气泡右侧额外画一个圆角标签；原文保留在库里，所以标签挂在原消息上。
+                    val insertedText = if (recallStyle == 1) {
+                        // 样式二：气泡下方只留撤回时间（不要灰色提示文字），标签由 RecallTagRenderer
+                        // 画在气泡右侧。原文仍在库里，所以标签能挂到原消息上。
                         RecallTagRenderer.labelText = tagText
                         RecallTagRenderer.install()
-                        RecallTagRenderer.rememberBlocked(revokeMsgId, msgInfo.humanReadableRepr)
+                        RecallTagRenderer.rememberBlocked(revokeMsgId)
+                        formatEpoch(createTime, timeFormat)
+                    } else {
+                        noticeText
                     }
 
                     WeMessageApi.createSimpleMsgInfoAndInsert(
                         MessageType.SYSTEM.code,
                         talker,
-                        noticeText,
+                        insertedText,
                         createTime + 1
                     )
 
@@ -206,7 +214,12 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             AlertDialogContent(
                 title = { Text("防撤回") },
                 text = {
-                    DefaultColumn {
+                    // 弹窗高度有限：固定上限 + 垂直滚动，否则下面的「提示格式 / 时间格式」会被截断。
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
                         ListItem(
                             modifier = Modifier.clickable { recallOutgoingInput = !recallOutgoingInput },
                             trailingContent = {
@@ -217,43 +230,43 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         )
 
                         ListItem(
-                            modifier = Modifier.clickable { recallStyleInput = 1 },
-                            trailingContent = {
-                                Text(if (recallStyleInput == 1) "✓ 已选" else "")
-                            },
-                            supportingContent = { Text("气泡右侧显示圆角「已撤回」标签，下方灰色小字提示（含时间）照常显示") },
-                            headlineContent = { Text("样式二：气泡右侧圆角标签") },
-                        )
-
-                        TextField(
-                            value = tagTextInput,
-                            onValueChange = { tagTextInput = it.take(6) },
-                            label = { Text("标签文字（默认「已撤回」）") },
-                            supportingText = { Text("建议 2~4 个字，太长会挤压气泡") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        ListItem(
                             modifier = Modifier.clickable { recallStyleInput = 0 },
                             trailingContent = {
                                 Text(if (recallStyleInput == 0) "✓ 已选" else "")
                             },
-                            supportingContent = { Text("只显示灰色小字系统提示，内容与时间格式由下面两项决定") },
+                            supportingContent = { Text("气泡下方显示自定义灰色小字 + 撤回时间（经典样式）") },
                             headlineContent = { Text("样式一：灰色小字提示") },
                         )
 
+                        ListItem(
+                            modifier = Modifier.clickable { recallStyleInput = 1 },
+                            trailingContent = {
+                                Text(if (recallStyleInput == 1) "✓ 已选" else "")
+                            },
+                            supportingContent = { Text("气泡右侧显示淡粉圆角标签，气泡下方只保留撤回时间") },
+                            headlineContent = { Text("样式二：气泡右侧圆角标签") },
+                        )
+
                         TextField(
-                            label = { Text("提示格式（两种样式都生效）") },
-                            supportingText = { Text($$"可使用占位符 $sender, $sendTime, $recallTime, $content") },
-                            value = patternInput,
-                            onValueChange = { patternInput = it },
+                            value = if (recallStyleInput == 1) tagTextInput else patternInput,
+                            onValueChange = {
+                                if (recallStyleInput == 1) tagTextInput = it.take(6) else patternInput = it
+                            },
+                            label = {
+                                Text(if (recallStyleInput == 1) "自定义文字（默认「已撤回」，最多 6 字）" else "提示格式")
+                            },
+                            supportingText = {
+                                if (recallStyleInput == 1) Text("显示在气泡右侧的小标签上")
+                                else Text($$"可用占位符 $sender, $sendTime, $recallTime, $content")
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
 
                         TextField(
                             value = timeFormatInput,
                             onValueChange = { timeFormatInput = it },
-                            label = { Text("时间格式（两种样式都生效）") },
+                            label = { Text("时间格式") },
+                            supportingText = { Text("两种样式下都会在气泡下方显示撤回时间") },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
