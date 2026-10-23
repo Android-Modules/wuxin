@@ -829,20 +829,20 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                     },
                                 )
                             }
-                            item {
+                            item(animatedVisibility = false) {
                                 Column(
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
                                 ) {
                                     Text(
-                                        "提示内容",
+                                        "旧版提示内容",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = if (legacyInput) MaterialTheme.colorScheme.onSurface
                                         else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        "可用占位符：\$sender 昵称、\$sendTime 发送时间、\$recallTime 撤回时间、\$content 消息内容",
+                                        "占位符：\$sender 昵称、\$sendTime 发送时间、\$recallTime 撤回时间、\$content 消息内容",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -852,23 +852,19 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                             patternInput = it
                                             legacyPattern = it
                                         },
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 6.dp),
                                         enabled = legacyInput,
                                         textStyle = MaterialTheme.typography.bodyMedium,
+                                        shape = MaterialTheme.shapes.small,
                                     )
-                                }
-                            }
-                            item {
-                                Column(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                                ) {
                                     Text(
                                         "时间格式",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = if (legacyInput) MaterialTheme.colorScheme.onSurface
                                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 12.dp),
                                     )
                                     Text(
                                         "例如 yyyy/MM/dd HH:mm:ss，留空则用默认格式",
@@ -881,10 +877,13 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                             timeFormatInput = it
                                             legacyTimeFormat = it.ifBlank { LEGACY_TIME_FORMAT }
                                         },
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 6.dp),
                                         enabled = legacyInput,
                                         singleLine = true,
                                         textStyle = MaterialTheme.typography.bodyMedium,
+                                        shape = MaterialTheme.shapes.small,
                                     )
                                 }
                             }
