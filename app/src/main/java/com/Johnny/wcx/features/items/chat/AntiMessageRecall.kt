@@ -14,9 +14,14 @@ import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,8 +88,11 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     /** 徽标类型，只在 [STYLE_BADGE] 下生效。 */
     private var badgeType by prefOption("recall_badge_type", BADGE_TYPE_ICON)
 
-    /** 旧版系统提示模板，沿用历史键，未改过则用默认文案。 */
+    /** 旧版系统提示模板（沿用历史键，未改过则用默认文案）。 */
     private var legacyPattern by prefOption("recall_pattern", "「\$sender」尝试撤回上一条消息 (已阻止)")
+
+    /** 旧版系统提示的时间格式（沿用历史键）。 */
+    private var legacyTimeFormat by prefOption("recall_time_format", LEGACY_TIME_FORMAT)
     // WeChat only marks a message as revoked AFTER overwriting its row in place (destroying the
     // content). Our blocked recalls leave the row intact and unmarked, so the recalled list must be
     // tracked here, persisted as "<talker>\u001F<msgSvrId>" entries.
@@ -268,12 +276,13 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     if (displayStyle == STYLE_LEGACY) {
                         // 旧版样式：插一条灰色系统提示，原消息保持不动（不加徽标、不变淡）。
                         val senderName = resolveSenderName(msgInfo, result)
+                        val timeFormat = legacyTimeFormat
                         val noticeText = legacyPattern
                             .replace("\$sender", senderName)
-                            .replace("\$sendTime", formatEpoch(msgInfo.createTime, LEGACY_TIME_FORMAT))
+                            .replace("\$sendTime", formatTime(msgInfo.createTime, timeFormat))
                             .replace(
                                 "\$recallTime",
-                                formatEpoch(System.currentTimeMillis(), LEGACY_TIME_FORMAT)
+                                formatTime(System.currentTimeMillis(), timeFormat)
                             )
                             .replace("\$content", msgInfo.humanReadableRepr)
                         WeMessageApi.createSimpleMsgInfoAndInsert(
@@ -295,6 +304,11 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             }
         }
     }
+
+    /** 用户自定义的时间模板可能写错，格式化必须兜底，不能让整条提示插不进去。 */
+    private fun formatTime(epochSeconds: Long, pattern: String): String =
+        runCatching { formatEpoch(epochSeconds, pattern) }
+            .getOrElse { formatEpoch(epochSeconds, LEGACY_TIME_FORMAT) }
 
     // 旧版提示里的发送者名字：优先用消息自己的发送者取真实显示名——revokemsg 里的名字
     // 在群里经常是「微信用户」这种占位，直接拿来会张冠李戴。
@@ -653,6 +667,8 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             var recallOutgoingInput by remember { mutableStateOf(recallOutgoing) }
             var legacyInput by remember { mutableStateOf(recallLegacyNotice) }
             var badgeTypeInput by remember { mutableStateOf(badgeType) }
+            var patternInput by remember { mutableStateOf(legacyPattern) }
+            var timeFormatInput by remember { mutableStateOf(legacyTimeFormat) }
             var migrationState by remember { mutableStateOf<MigrationState>(MigrationState.Idle) }
 
             AlertDialogContent(
@@ -740,6 +756,65 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                         }
                                     },
                                 )
+                            }
+                            item {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        "提示内容",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (legacyInput) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "可用占位符：\$sender 昵称、\$sendTime 发送时间、\$recallTime 撤回时间、\$content 消息内容",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    OutlinedTextField(
+                                        value = patternInput,
+                                        onValueChange = {
+                                            patternInput = it
+                                            legacyPattern = it
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = legacyInput,
+                                        textStyle = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                            item {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        "时间格式",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (legacyInput) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "例如 yyyy/MM/dd HH:mm:ss，留空则用默认格式",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    OutlinedTextField(
+                                        value = timeFormatInput,
+                                        onValueChange = {
+                                            timeFormatInput = it
+                                            legacyTimeFormat = it.ifBlank { LEGACY_TIME_FORMAT }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = legacyInput,
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
                             }
                         }
                     },
