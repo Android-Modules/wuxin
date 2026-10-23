@@ -1,13 +1,15 @@
 package com.Johnny.wcx.features.items.chat
 
-import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.utils.WeLogger
 import de.robv.android.xposed.XC_MethodHook
@@ -15,160 +17,205 @@ import de.robv.android.xposed.XposedBridge
 import dev.ujhhgtg.reflekt.utils.toClass
 
 /**
- * 防撤回「圆角标签」的渲染器。
+ * 防撤回「气泡右侧圆角标签」的渲染器（样式二）。
  *
- * 做法：给每条被拦下来的撤回消息记一条 `msgSvrId|原文`，然后挂到聊天消息容器
- * （`ChattingItemContainer`）的 `onAttachedToWindow` 上——容器是横向 LinearLayout
- * （头像 + 气泡），往它末尾 addView 一个圆角小标签就落在气泡右侧。
+ * ## 为什么不用 ChattingItemContainer
+ * 8.0.79 的 release 包里 `com.tencent.mm.ui.chatting.viewitems.ChattingItemContainer` 只剩字符串
+ * （混淆后的日志文本），**没有类定义**，按类名 hook 一定落空。这里改用两个都保留原名的锚点：
+ * `com.tencent.mm.ui.chatting.ChattingUI`（有定义）+ RecyclerView 的可见子项。
  *
- * 为什么挂在 `onAttachedToWindow` 而不是 `onBindViewHolder`：前者是公开 framework 方法，
- * 名字稳定、不依赖混淆；后者在微信里是混淆名，每版都变。视图复用时 container 会带着旧标签
- * 重新 attach，所以每次进入都要先按当前内容复核一遍：命中就补标签，不命中就把旧标签摘掉，
- * 避免"标签串到别的消息上"。
+ * ## 匹配方式
+ * 1. 优先从 item 的 tag 里反射读 `field_msgSvrId`（微信 storage 对象保留 field_ 前缀），
+ *    这样文字、图片、语音、视频等**所有消息类型**都能匹配；
+ * 2. 读不到再退化为遍历子 TextView 的文本比对（只覆盖文本消息）。
  *
- * 匹配顺序：先用容器 tag 里的消息对象取内容，取不到再退化为遍历子 TextView 的文本比对。
- * 两条路径都失败时什么都不做——渲染层出问题绝不影响防撤回本身。
+ * ## 已知限制
+ * 只在进入聊天页（ChattingUI.onResume）后渲染一次可见区域；上滑加载出来的历史消息不会再补标签。
+ * 这是为了不常驻 RecyclerView 的滑动回调（那会明显影响滚动流畅度）。
  */
 internal object RecallTagRenderer {
 
     private const val TAG = "RecallTagRenderer"
 
-    /** 被拦下的撤回消息：`msgSvrId|原文`。与 AntiMessageRecall 共用。 */
+    /** 被拦下的撤回消息 msgSvrId 集合。与 AntiMessageRecall 共用。 */
     internal const val KEY_BLOCKED = "recall_blocked_msgs"
 
-    private const val MAX_ENTRIES = 200
+    private const val MAX_ENTRIES = 300
 
-    /** 标签 View 的标记，用来判断"这个容器里是不是已经加过了"。 */
     private val LABEL_TAG = "wcx_recall_label".hashCode()
 
-    private const val CONTAINER_CLASS = "com.tencent.mm.ui.chatting.viewitems.ChattingItemContainer"
+    private const val CHATTING_UI = "com.tencent.mm.ui.chatting.ChattingUI"
+
+    // 与截图接近的柔和配色
+    private const val BG_COLOR = 0xFFFDE8F0.toInt()
+    private const val TEXT_COLOR = 0xFFB0455F.toInt()
 
     private var installed = false
 
-    /** 当前标签文字（默认「已撤回」，可在设置里改）。 */
     internal var labelText: String = "已撤回"
 
     internal fun blockedEntries(): Set<String> = WePrefs.getStringSetOrDef(KEY_BLOCKED, emptySet())
 
-    /** 记一条被拦下的撤回消息（原文用于渲染时匹配）。 */
-    internal fun rememberBlocked(msgSvrId: String, content: String) {
+    internal fun rememberBlocked(msgSvrId: String) {
+        if (msgSvrId.isBlank()) return
         runCatching {
             val entries = blockedEntries().toMutableSet()
-            entries.add("$msgSvrId|${content.take(80)}")
-            // 无序遍历的 Set 没有"最旧"概念，超出上限就整批保留最近的若干条即可。
+            entries.add(msgSvrId)
             val trimmed = if (entries.size <= MAX_ENTRIES) entries
             else entries.toList().takeLast(MAX_ENTRIES).toSet()
             WePrefs.putStringSet(KEY_BLOCKED, trimmed)
         }.onFailure { WeLogger.w(TAG, "记录被撤回消息失败", it) }
     }
 
-    internal fun clearBlocked() {
-        runCatching { WePrefs.putStringSet(KEY_BLOCKED, emptySet()) }
-    }
-
-    /** 安装渲染钩子（幂等）。 */
     internal fun install() {
         if (installed) return
-        val clazz = runCatching { CONTAINER_CLASS.toClass() }.getOrElse { ex ->
-            WeLogger.w(TAG, "未找到 $CONTAINER_CLASS，圆角标签不可用（不影响防撤回）", ex)
+        val clazz = runCatching { CHATTING_UI.toClass() }.getOrElse { ex ->
+            WeLogger.w(TAG, "ChattingUI 未找到，圆角标签不可用（不影响防撤回）", ex)
             return
         }
-        val method = runCatching { clazz.getDeclaredMethod("onAttachedToWindow") }.getOrElse { ex ->
-            WeLogger.w(TAG, "ChattingItemContainer.onAttachedToWindow 不存在，圆角标签不可用", ex)
+        val onResume = runCatching { clazz.getDeclaredMethod("onResume") }.getOrElse { ex ->
+            WeLogger.w(TAG, "ChattingUI.onResume 不存在，圆角标签不可用", ex)
             return
         }
         runCatching {
-            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+            XposedBridge.hookMethod(onResume, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    runCatching { decorate(param.thisObject as? ViewGroup) }
-                        .onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
+                    val activity = param.thisObject as? Activity ?: return
+                    runCatching {
+                        activity.window?.decorView?.post { runCatching { decorate(activity) } }
+                    }.onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
                 }
             })
-        }.onFailure { ex ->
-            WeLogger.w(TAG, "hook onAttachedToWindow 失败，圆角标签不可用", ex)
-            return
-        }
-        installed = true
-        WeLogger.i(TAG, "圆角标签渲染已安装")
+            installed = true
+            WeLogger.i(TAG, "圆角标签渲染已安装")
+        }.onFailure { WeLogger.w(TAG, "hook ChattingUI.onResume 失败", it) }
     }
 
     // ── 渲染 ────────────────────────────────────────────────────────────────
 
-    private fun decorate(container: ViewGroup?) {
-        container ?: return
-        val entries = blockedEntries()
-        val existing = container.findViewWithTag<View>(LABEL_TAG)
+    private fun decorate(activity: Activity) {
+        val list = findRecyclerView(activity.window?.decorView) ?: return
+        val ids = blockedEntries()
+        if (ids.isEmpty()) return
 
-        val matched = entries.isNotEmpty() && matchesBlocked(container, entries)
-        if (!matched) {
-            existing?.let { runCatching { container.removeView(it) } }
-            return
+        for (index in 0 until list.childCount) {
+            val item = list.getChildAt(index) as? ViewGroup ?: continue
+            val hit = runCatching { matchesBlocked(item, ids) }.getOrDefault(false)
+            val existing = item.findViewWithTag<View>(LABEL_TAG)
+
+            if (!hit) {
+                existing?.let { runCatching { item.removeView(it) } }
+                continue
+            }
+            if (existing != null) continue
+
+            val label = buildLabel(item.context) ?: continue
+            runCatching { attach(item, label) }
+                .onFailure { WeLogger.w(TAG, "addView 标签失败", it) }
         }
-        if (existing != null) return
+    }
 
-        val label = buildLabel(container.context) ?: return
-        runCatching {
-            if (container is LinearLayout) {
+    private fun matchesBlocked(item: ViewGroup, ids: Set<String>): Boolean {
+        findMsgSvrId(item)?.let { return it in ids }
+        // 退化：文本匹配（只有文本消息有效）
+        val texts = mutableListOf<String>()
+        collectTexts(item, texts, 0)
+        return texts.any { it.trim() in ids }
+    }
+
+    /** 递归找 item 子树上 tag 里的 msgSvrId。 */
+    private fun findMsgSvrId(view: View): String? {
+        val tag = view.tag
+        if (tag != null && tag != LABEL_TAG) {
+            readLongField(tag, "field_msgSvrId")?.let { return it.toString() }
+            readLongField(tag, "field_msgId")?.let { return it.toString() }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findMsgSvrId(view.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun readLongField(obj: Any, fieldName: String): Long? {
+        var clazz: Class<*>? = obj.javaClass
+        while (clazz != null && clazz != Any::class.java) {
+            try {
+                val field = clazz.getDeclaredField(fieldName)
+                field.isAccessible = true
+                return (field.get(obj) as? Number)?.toLong()
+            } catch (_: NoSuchFieldException) {
+                // 继续往父类找
+            } catch (_: Throwable) {
+                return null
+            }
+            clazz = clazz.superclass
+        }
+        return null
+    }
+
+    private fun collectTexts(view: View, out: MutableList<String>, depth: Int) {
+        if (depth > 6) return
+        if (view is TextView && view.tag != LABEL_TAG) {
+            view.text?.toString()?.let { out.add(it) }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) collectTexts(view.getChildAt(i), out, depth + 1)
+        }
+    }
+
+    private fun attach(parent: ViewGroup, label: TextView) {
+        when (parent) {
+            is LinearLayout -> {
                 val lp = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 )
                 lp.gravity = Gravity.CENTER_VERTICAL
-                lp.marginStart = dp(container.context, 4)
-                container.addView(label, lp)
-            } else {
-                container.addView(label)
+                lp.marginStart = dp(parent.context, 4)
+                parent.addView(label, lp)
             }
-        }.onFailure {
-            WeLogger.w(TAG, "addView 标签失败", it)
-        }
-    }
-
-    private fun matchesBlocked(container: ViewGroup, entries: Set<String>): Boolean {
-        val wanted = entries.mapNotNull { it.substringAfter('|', "").takeIf { t -> t.isNotBlank() } }
-        if (wanted.isEmpty()) return false
-
-        val texts = mutableListOf<String>()
-        collectTexts(container, texts, 0)
-        if (texts.isEmpty()) return false
-
-        return texts.any { text ->
-            val normalized = text.trim()
-            normalized.isNotEmpty() && wanted.any { it == normalized }
-        }
-    }
-
-    private fun collectTexts(view: View, out: MutableList<String>, depth: Int) {
-        if (depth > 6) return
-        if (view is TextView) {
-            // 我们自己加的标签不要再参与匹配。
-            if (view.tag == LABEL_TAG) return
-            view.text?.toString()?.let { out.add(it) }
-        }
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                collectTexts(view.getChildAt(i), out, depth + 1)
+            is FrameLayout -> {
+                val lp = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+                lp.gravity = Gravity.END or Gravity.BOTTOM
+                lp.marginEnd = dp(parent.context, 6)
+                parent.addView(label, lp)
             }
+            else -> parent.addView(label)
         }
     }
 
-    @SuppressLint("SetTextI18n")
     private fun buildLabel(context: Context?): TextView? {
         context ?: return null
         val text = labelText.ifBlank { "已撤回" }
         return TextView(context).apply {
             this.text = text
             textSize = 10f
-            setTextColor(0xFFFF2D6B.toInt())
+            setTextColor(TEXT_COLOR)
             includeFontPadding = false
             setPadding(dp(context, 6), dp(context, 2), dp(context, 6), dp(context, 2))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(context, 9).toFloat()
-                setColor(0xFFFFEBF1.toInt())
+                cornerRadius = dp(context, 8).toFloat()
+                setColor(BG_COLOR)
             }
             tag = LABEL_TAG
         }
+    }
+
+    private fun findRecyclerView(view: View?): RecyclerView? {
+        view ?: return null
+        if (view is RecyclerView && view.id != View.NO_ID) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findRecyclerView(view.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun dp(context: Context, value: Int): Int =
