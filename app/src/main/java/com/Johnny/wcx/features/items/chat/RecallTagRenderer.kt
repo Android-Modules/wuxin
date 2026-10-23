@@ -82,7 +82,9 @@ internal object RecallTagRenderer {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val activity = param.thisObject as? Activity ?: return
                     runCatching {
-                        activity.window?.decorView?.post { runCatching { decorate(activity) } }
+                        val decor = activity.window?.decorView ?: return@runCatching
+                        // 等列表完成一次布局再扫，onResume 时 RecyclerView 往往还是空的。
+                        decor.postDelayed({ runCatching { decorate(activity) } }, 300L)
                     }.onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
                 }
             })
@@ -94,13 +96,21 @@ internal object RecallTagRenderer {
     // ── 渲染 ────────────────────────────────────────────────────────────────
 
     private fun decorate(activity: Activity) {
-        val list = findRecyclerView(activity.window?.decorView) ?: return
+        val list = bestRecyclerView(activity.window?.decorView)
         val ids = blockedEntries()
-        if (ids.isEmpty()) return
+        WeLogger.i(
+            TAG,
+            "decorate: recycler=${list != null} children=${list?.childCount ?: -1} blockedIds=${ids.size}",
+        )
+        if (list == null || ids.isEmpty()) return
 
         for (index in 0 until list.childCount) {
             val item = list.getChildAt(index) as? ViewGroup ?: continue
-            val hit = runCatching { matchesBlocked(item, ids) }.getOrDefault(false)
+            // 两条路取 msgSvrId：先看 item 子树的 tag，再退回 adapter.getItem(position)。
+            val msgId = runCatching { findMsgSvrId(item) }.getOrNull()
+                ?: runCatching { msgIdAtPosition(list, item) }.getOrNull()
+            val hit = if (msgId != null) msgId in ids else false
+            WeLogger.d(TAG, "item#$index msgSvrId=$msgId hit=$hit")
             val existing = item.findViewWithTag<View>(LABEL_TAG)
 
             if (!hit) {
@@ -136,6 +146,24 @@ internal object RecallTagRenderer {
             }
         }
         return null
+    }
+
+    /**
+     * 兜底：通过 RecyclerView 的 adapter 取该位置的 item 对象，再读它的 msgSvrId。
+     *
+     * 微信的消息适配器是混淆类，但 `getItem(int)` 这种 public 方法名通常保留；取不到就返回 null，
+     * 不影响上一条路径。
+     */
+    private fun msgIdAtPosition(list: RecyclerView, item: View): String? {
+        val adapter = list.adapter ?: return null
+        val position = list.getChildAdapterPosition(item)
+        if (position < 0) return null
+        val getter = adapter.javaClass.methods.firstOrNull {
+            it.name == "getItem" && it.parameterCount == 1 &&
+                it.parameterTypes[0] == Int::class.javaPrimitiveType
+        } ?: return null
+        val obj = runCatching { getter.invoke(adapter, position) }.getOrNull() ?: return null
+        return (readLongField(obj, "field_msgSvrId") ?: readLongField(obj, "field_msgId"))?.toString()
     }
 
     private fun readLongField(obj: Any, fieldName: String): Long? {
@@ -207,15 +235,20 @@ internal object RecallTagRenderer {
         }
     }
 
-    private fun findRecyclerView(view: View?): RecyclerView? {
-        view ?: return null
-        if (view is RecyclerView && view.id != View.NO_ID) return view
+    /** 聊天页里可能同时有消息列表、表情面板等多个 RecyclerView，取「子项最多」的那个。 */
+    private fun bestRecyclerView(view: View?): RecyclerView? {
+        val all = mutableListOf<RecyclerView>()
+        collectRecyclerViews(view, all, 0)
+        if (all.isEmpty()) return null
+        return all.maxByOrNull { it.childCount }
+    }
+
+    private fun collectRecyclerViews(view: View?, out: MutableList<RecyclerView>, depth: Int) {
+        if (view == null || depth > 12) return
+        if (view is RecyclerView) out.add(view)
         if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                findRecyclerView(view.getChildAt(i))?.let { return it }
-            }
+            for (i in 0 until view.childCount) collectRecyclerViews(view.getChildAt(i), out, depth + 1)
         }
-        return null
     }
 
     private fun dp(context: Context, value: Int): Int =

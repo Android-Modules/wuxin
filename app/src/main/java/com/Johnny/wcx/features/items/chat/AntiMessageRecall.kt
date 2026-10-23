@@ -34,6 +34,7 @@ import com.Johnny.wcx.ui.content.DefaultColumn
 import com.Johnny.wcx.ui.content.TextButton
 import com.Johnny.wcx.ui.utils.showComposeDialog
 import com.Johnny.wcx.utils.WeLogger
+import com.Johnny.wcx.utils.strings.isGroupChatWxId
 import com.Johnny.wcx.utils.formatEpoch
 
 @Feature(name = "防撤回", categories = ["聊天"], description = "阻止撤回消息")
@@ -108,8 +109,17 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     val replaceMsg = result[".sysmsg.revokemsg.replacemsg"] as? String?
                         ?: return
                     val match = NAME_REGEX.find(replaceMsg)
-                    // 粉色标签样式不依赖发送者名字，所以这里不再直接 return（否则该样式下部分撤回拦不住）。
-                    val senderName = match?.groupValues?.get(2) ?: if (recallOutgoing) "自己" else ""
+                    val nameFromXml = match?.groupValues?.get(2).orEmpty()
+                    // 优先用消息自己的发送者取真实显示名：replacemsg 里的名字在群里经常只有
+                    // 「微信用户」这种占位（对面没设群昵称时尤其明显），取它做提示会张冠李戴。
+                    val senderName = runCatching {
+                        val senderWxId = msgInfo.sender
+                        if (senderWxId.isBlank()) nameFromXml
+                        else if (talker.isGroupChatWxId)
+                            WeDatabaseApi.getGroupMemberDisplayName(talker, senderWxId).ifBlank { nameFromXml }
+                        else WeDatabaseApi.getDisplayName(talker).ifBlank { nameFromXml }
+                    }.getOrElse { nameFromXml }
+                        .ifBlank { if (recallOutgoing) "自己" else nameFromXml }
                     if (senderName.isEmpty() && recallStyle != 1) return
 
                     // 系统提示两种样式都要插：它承载时间与自定义文案，样式二只是"多"一个圆角标签。
@@ -119,23 +129,22 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         .replace($$"$recallTime", formatEpoch(System.currentTimeMillis(), timeFormat))
                         .replace($$"$content", msgInfo.humanReadableRepr)
 
-                    val insertedText = if (recallStyle == 1) {
-                        // 样式二：气泡下方只留撤回时间（不要灰色提示文字），标签由 RecallTagRenderer
-                        // 画在气泡右侧。原文仍在库里，所以标签能挂到原消息上。
+                    if (recallStyle == 1) {
+                        // 样式二：不插入任何系统消息。
+                        // 一旦插了，会话列表的最后一条预览会变成「微信用户: 时间」，
+                        // 而且自己撤回时会和微信原生提示叠出两条时间。只做右侧标签即可。
                         RecallTagRenderer.labelText = tagText
                         RecallTagRenderer.install()
                         RecallTagRenderer.rememberBlocked(revokeMsgId)
-                        formatEpoch(createTime, timeFormat)
                     } else {
-                        noticeText
+                        // 样式一：灰色小字系统提示（原样式）。
+                        WeMessageApi.createSimpleMsgInfoAndInsert(
+                            MessageType.SYSTEM.code,
+                            talker,
+                            noticeText,
+                            createTime + 1
+                        )
                     }
-
-                    WeMessageApi.createSimpleMsgInfoAndInsert(
-                        MessageType.SYSTEM.code,
-                        talker,
-                        insertedText,
-                        createTime + 1
-                    )
 
                     WeLogger.i(TAG, "blocked message revoke")
                 }
