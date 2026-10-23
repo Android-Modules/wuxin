@@ -3,11 +3,9 @@ package com.Johnny.wcx.features.items.chat
 import android.app.Activity
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.Johnny.wcx.preferences.WePrefs
@@ -43,6 +41,12 @@ internal object RecallTagRenderer {
     private const val MAX_ENTRIES = 300
 
     private val LABEL_TAG = "wcx_recall_label".hashCode()
+
+    /** 挂在 label 上的第二枚 tag，用于取回 OnPreDrawListener 以便移除。 */
+    private val LISTENER_TAG = "wcx_recall_label_listener".hashCode()
+
+    /** 被撤回消息的原始透明度（与上游一致：变暗表示"已删除"）。 */
+    private const val RECALL_ALPHA = 0.4f
 
     private const val CHATTING_UI = "com.tencent.mm.ui.chatting.ChattingUI"
 
@@ -84,7 +88,13 @@ internal object RecallTagRenderer {
                     runCatching {
                         val decor = activity.window?.decorView ?: return@runCatching
                         // 等列表完成一次布局再扫，onResume 时 RecyclerView 往往还是空的。
-                        decor.postDelayed({ runCatching { decorate(activity) } }, 300L)
+                        // 首屏加载有快有慢，分几档多扫几次，避免只扫到空列表就再不补标签。
+                        for (delay in longArrayOf(300L, 1200L, 2500L)) {
+                            decor.postDelayed({
+                                runCatching { decorate(activity) }
+                                    .onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
+                            }, delay)
+                        }
                     }.onFailure { WeLogger.w(TAG, "渲染圆角标签失败", it) }
                 }
             })
@@ -114,7 +124,12 @@ internal object RecallTagRenderer {
             val existing = item.findViewWithTag<View>(LABEL_TAG)
 
             if (!hit) {
-                existing?.let { runCatching { item.removeView(it) } }
+                existing?.let {
+                    removeListener(item, it)
+                    runCatching { item.removeView(it) }
+                }
+                // 视图被回收复用后原来的变暗要还原，否则正常消息会一直是半透明的。
+                runCatching { restoreAlpha(item, 0) }
                 continue
             }
             if (existing != null) continue
@@ -193,27 +208,100 @@ internal object RecallTagRenderer {
         }
     }
 
+    /**
+     * 把标签挂到消息行上，并用绝对定位放到「气泡右侧」。
+     *
+     * ## 为什么不再用容器自带的 LayoutParams
+     * 微信消息行的根节点是水平 LinearLayout，之前把标签当行内子项加进去、靠 gravity 摆位，
+     * 结果标签被布局挤到屏幕外（真机上就是「气泡右侧什么都没有」）。这里改成：
+     * 先按容器默认 LayoutParams 加入（addView 单参走 generateDefaultLayoutParams，任何容器都安全），
+     * 再在每帧绘制前按「气泡视图」的真实屏幕坐标算 translationX/Y —— 相当于浮在行上，不参与布局。
+     */
     private fun attach(parent: ViewGroup, label: TextView) {
-        when (parent) {
-            is LinearLayout -> {
-                val lp = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-                lp.gravity = Gravity.CENTER_VERTICAL
-                lp.marginStart = dp(parent.context, 4)
-                parent.addView(label, lp)
+        val content = findMessageContent(parent)
+        parent.addView(label)
+        if (content == null) {
+            WeLogger.d(TAG, "attach: 未找到气泡视图，标签不可见")
+            return
+        }
+        // 变暗表示这条消息已被撤回（标签浮在变暗层之外，自己也要设 alpha）。
+        runCatching { content.alpha = RECALL_ALPHA }
+        label.alpha = 1f
+
+        val rowLoc = IntArray(2)
+        val contentLoc = IntArray(2)
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            if (!label.isAttachedToWindow || !parent.isAttachedToWindow) return@OnPreDrawListener true
+            if (parent.width == 0 || label.measuredWidth == 0) return@OnPreDrawListener true
+            parent.getLocationOnScreen(rowLoc)
+            content.getLocationOnScreen(contentLoc)
+            val contentLeft = (contentLoc[0] - rowLoc[0]).toFloat()
+            val contentRight = contentLeft + content.width
+            val contentBottom = (contentLoc[1] - rowLoc[1] + content.height).toFloat()
+            val gap = dp(parent.context, 4).toFloat()
+            val maxX = (parent.width - label.measuredWidth).toFloat()
+            val targetX = (contentRight + gap).coerceIn(0f, maxOf(0f, maxX))
+            val maxY = (parent.height - label.measuredHeight).toFloat()
+            val targetY = (contentBottom - label.measuredHeight).coerceIn(0f, maxOf(0f, maxY))
+            if (label.translationX != targetX) label.translationX = targetX
+            if (label.translationY != targetY) label.translationY = targetY
+            true
+        }
+        runCatching {
+            parent.viewTreeObserver.addOnPreDrawListener(listener)
+            label.setTag(LISTENER_TAG, listener)
+        }.onFailure { WeLogger.w(TAG, "addOnPreDrawListener 失败", it) }
+    }
+
+    /** 把子树里被压暗的视图还原成不透明（只动 alpha < 1 的，避免误伤微信自己的动画）。 */
+    private fun restoreAlpha(view: View, depth: Int) {
+        if (depth > 8) return
+        if (view.tag != LABEL_TAG && view.alpha < 1f) view.alpha = 1f
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) restoreAlpha(view.getChildAt(i), depth + 1)
+        }
+    }
+
+    private fun removeListener(parent: ViewGroup, label: View) {
+        runCatching {
+            val listener = label.getTag(LISTENER_TAG) as? ViewTreeObserver.OnPreDrawListener
+                ?: return@runCatching
+            parent.viewTreeObserver.removeOnPreDrawListener(listener)
+        }
+    }
+
+    /**
+     * 找消息行里的「气泡/内容」视图：优先用 holder 的 getMainContainerView()（微信 holder 基类方法，
+     * 各消息类型都覆写成自己的气泡），失败再退化为「tag 类名以 viewitems 开头的可见视图」。
+     */
+    private fun findMessageContent(row: View): View? {
+        val holder = row.tag
+        if (holder != null) {
+            val getter = runCatching {
+                holder.javaClass.methods.firstOrNull {
+                    it.name == "getMainContainerView" && it.parameterCount == 0
+                }
+            }.getOrNull()
+            if (getter != null) {
+                runCatching { getter.invoke(holder) as? View }
+                    .getOrNull()
+                    ?.takeIf { it.width > 0 }
+                    ?.let { return it }
             }
-            is FrameLayout -> {
-                val lp = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-                lp.gravity = Gravity.END or Gravity.BOTTOM
-                lp.marginEnd = dp(parent.context, 6)
-                parent.addView(label, lp)
-            }
-            else -> parent.addView(label)
+        }
+        val found = mutableListOf<View>()
+        collectTaggedBubble(row, found, 0)
+        return found.firstOrNull { it.width > 0 } ?: found.firstOrNull()
+    }
+
+    private fun collectTaggedBubble(view: View, out: MutableList<View>, depth: Int) {
+        if (depth > 8) return
+        val tagName = view.tag?.javaClass?.name
+        if (tagName != null && tagName.startsWith("com.tencent.mm.ui.chatting.viewitems")) {
+            out.add(view)
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) collectTaggedBubble(view.getChildAt(i), out, depth + 1)
         }
     }
 
