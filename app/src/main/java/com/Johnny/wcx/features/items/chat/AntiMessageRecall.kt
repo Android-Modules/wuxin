@@ -46,6 +46,8 @@ import android.os.Handler
 import android.os.Looper
 import de.robv.android.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
+import com.Johnny.wcx.dexkit.abc.IResolveDex
+import com.Johnny.wcx.dexkit.dsl.dexMethod
 import com.Johnny.wcx.features.api.core.WeDatabaseApi
 import com.Johnny.wcx.features.api.core.WeDatabaseListenerApi
 import com.Johnny.wcx.features.api.core.WeMessageApi
@@ -81,7 +83,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Feature(name = "防撤回", categories = ["聊天"], description = "阻止撤回消息")
 object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListener,
-    WeChatMessageViewApi.ICreateViewListener, WeDatabaseListenerApi.IUpdateListener {
+    WeChatMessageViewApi.ICreateViewListener, WeDatabaseListenerApi.IUpdateListener, IResolveDex {
 
     private const val TAG = "AntiMessageRecall"
 
@@ -157,6 +159,19 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         "M280,840 Q247,840 223.5,816.5 T200,760 V240 H160 V160 H360 V120 H600 V160 H800 V240 H760 V760 Q760,793 736.5,816.5 T680,840 H280 Z M680,240 H280 V760 H680 Z M360,680 H440 V320 H360 Z M520,680 H600 V320 H520 Z"
 
     private val badgeIconLight = "#C62828".toColorInt()
+    /**
+     * 微信处理「对方撤回」的入口: BigBallSysCmdMsgConsumer.doRevokeMsg(...)。
+     *
+     * 微信就是在这里删除原消息、改写会话记录并清理本地媒体的。只还原数据库字段救不回
+     * 「撤回前根本没下载过」的图片和语音, 所以直接跳过这个方法: 微信压根不认为发生过撤回,
+     * 拦截后的消息才和没撤回时完全一样 —— 图片能打开、语音能播放, 且什么时候点都行。
+     */
+    private val methodRevokeHandler by dexMethod {
+        matcher {
+            usingEqStrings("doRevokeMsg xmlSrvMsgId=%d talker=%s isGet=%s")
+        }
+    }
+
     private val badgeCircleLight = "#FFCDD2".toColorInt()
     private val badgeIconDark = "#EF9A9A".toColorInt()
     private val badgeCircleDark = "#3E1C1C".toColorInt()
@@ -177,7 +192,97 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         WeXmlParserApi.addListener(this)
         WeChatMessageViewApi.addListener(this)
         WeDatabaseListenerApi.addListener(this)
+        hookRevokeHandler()
         WeLogger.i(TAG, "enabled, style=$displayStyle, recallOutgoing=$recallOutgoing")
+    }
+
+    /**
+     * 拦住微信真正的撤回处理。
+     *
+     * 之前只有「XML 解析后置空 type」+「数据库改写还原」两层, 消息虽然留在会话里, 但微信已经把
+     * 原消息判成撤回了: 图片点开提示「图片已被清理」、语音播放失败（尤其是撤回前没点开过的媒体,
+     * 本地根本没有文件, 还原字段也下载不回来）。这里把处理入口整个跳过才是真正的防撤回。
+     */
+    private fun hookRevokeHandler() {
+        runCatching {
+            methodRevokeHandler.hookBefore {
+                runCatching {
+                    val srvId = args.firstOrNull { it is Long } as? Long ?: 0L
+                    if (shouldBlockRevoke(srvId)) {
+                        result = null
+                        WeLogger.i(TAG, "blocked revoke handler (msgSvrId=$srvId)")
+                        // 跳过微信的处理后, 它连「这条消息被撤回了」都不会再记录, 所以标记要我们自己补。
+                        runCatching { markRecalled(srvId) }
+                            .onFailure { WeLogger.w(TAG, "markRecalled failed: ${it.message}") }
+                    } else {
+                        WeLogger.i(TAG, "let self revoke pass (msgSvrId=$srvId)")
+                    }
+                }.onFailure { WeLogger.w(TAG, "revoke handler hook body failed: ${it.message}") }
+            }
+        }.onFailure { WeLogger.e(TAG, "hook doRevokeMsg failed", it) }
+    }
+
+    /**
+     * 微信被跳过之后不会再有「撤回」这一步, 徽标 / 旧版提示必须由我们自己标记。
+     * 这里按 msgSvrId 反查原消息, 取出会话与发送时间。
+     */
+    private fun markRecalled(msgSvrId: Long) {
+        if (msgSvrId == 0L) return
+        val row = runCatching {
+            WeDatabaseApi.executeQuery(
+                "SELECT msgId,talker,createTime,isSend,content FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(msgSvrId.toString())
+            ).firstOrNull()
+        }.getOrNull() ?: run {
+            WeLogger.w(TAG, "markRecalled: original message not found (msgSvrId=$msgSvrId)")
+            return
+        }
+
+        val talker = row["talker"] as? String ?: return
+        val msgId = (row["msgId"] as? Number)?.toLong() ?: 0L
+        val createTime = (row["createTime"] as? Number)?.toLong() ?: 0L
+        val isSend = (row["isSend"] as? Number)?.toInt() == 1
+        val content = row["content"] as? String ?: ""
+
+        if (displayStyle == STYLE_LEGACY) {
+            // 旧版样式: 插一条灰色系统提示, 原消息保持不动。
+            if (msgId == 0L || !noticeNotified.add(msgId)) return
+            val senderName = runCatching {
+                if (isSend) "自己"
+                else if (talker.isGroupChatWxId) "" else WeDatabaseApi.getDisplayName(talker)
+            }.getOrNull().orEmpty().ifBlank { if (isSend) "自己" else "有人" }
+            WeMessageApi.createSimpleMsgInfoAndInsert(
+                MessageType.SYSTEM.code,
+                talker,
+                buildLegacyNotice(senderName, createTime, content),
+                createTime + 1
+            )
+            WeLogger.i(TAG, "legacy notice inserted for msgSvrId=$msgSvrId")
+            return
+        }
+
+        // 新版徽标样式: 记进持久化列表 + 立刻刷新已经绑定的气泡。
+        val key = encodeKey(talker, msgSvrId)
+        recalledKeyCache = recalledKeyCache + key
+        recalledRecords = recalledKeyCache
+        refreshBoundViews(talker, msgSvrId)
+        WeLogger.i(TAG, "marked recalled: $key")
+    }
+
+    /** 自己的消息是否也要拦：由「防撤回自己的消息」开关决定；查不到原消息时按「拦」处理。 */
+    private fun shouldBlockRevoke(msgSvrId: Long): Boolean {
+        if (msgSvrId == 0L) return true
+        val isSend = runCatching {
+            WeDatabaseApi.executeQuery(
+                "SELECT isSend FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(msgSvrId.toString())
+            ).firstOrNull()?.get("isSend")?.let { (it as? Number)?.toInt() == 1 }
+        }.getOrNull()
+        return when (isSend) {
+            null -> true
+            true -> recallOutgoing
+            false -> true
+        }
     }
 
     override fun onDisable() {
@@ -278,23 +383,58 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             ).firstOrNull()
         }.getOrNull()
 
+    /**
+     * 撤回改写会动很多列: 除了 content / type, 还会清掉 imgPath、lvbuffer（图片与语音的媒体信息、
+     * 下载状态都在这里）、msgSource、flag 等。
+     *
+     * 只还原白名单里的几列时, 会话里能看到的文字是回来了, 但媒体那层读到的仍是「已被清理」——
+     * 图片点开提示「图片已被清理」、语音播放失败。所以这里按撤回前的整行快照还原所有列。
+     */
     private fun restoreRow(values: ContentValues, raw: Map<String, Any?>) {
-        val keys = arrayOf(
-            "content", "type", "isSend", "status",
-            "imgPath", "reserved", "transContent", "msgSource", "flag"
-        )
-        for (key in keys) {
-            val v = raw[key] ?: continue
+        var restored = 0
+        for ((key, v) in raw) {
+            if (key.equals("msgId", ignoreCase = true)) continue
+            if (v == null) continue
             when (v) {
-                is Long -> values.put(key, v)
-                is Int -> values.put(key, v)
-                is String -> values.put(key, v)
-                is Double -> values.put(key, v)
-                is Float -> values.put(key, v)
-                is ByteArray -> values.put(key, v)
-                is Boolean -> values.put(key, v)
+                is Long -> { values.put(key, v); restored++ }
+                is Int -> { values.put(key, v); restored++ }
+                is Short -> { values.put(key, v.toInt()); restored++ }
+                is Byte -> { values.put(key, v.toInt()); restored++ }
+                is String -> { values.put(key, v); restored++ }
+                is Double -> { values.put(key, v); restored++ }
+                is Float -> { values.put(key, v); restored++ }
+                is ByteArray -> { values.put(key, v); restored++ }
+                is Boolean -> { values.put(key, v); restored++ }
             }
         }
+        WeLogger.i(TAG, "restoreRow: restored $restored columns from snapshot")
+        logMediaAvailability(raw)
+    }
+
+    /**
+     * 还原后确认图片 / 语音的本地文件是否还在。
+     * 日志里 `media exists=false` 说明微信在撤回时把文件删了（只还原数据库救不回来）;
+     * `media exists=true` 说明文件还在, 之前打不开只是字段被清空。
+     */
+    private fun logMediaAvailability(raw: Map<String, Any?>) {
+        val path = raw["imgPath"] as? String ?: return
+        if (path.isBlank()) return
+        runCatching {
+            WeLogger.i(TAG, "restoreRow: media exists=${java.io.File(path).exists()} path=$path")
+        }
+    }
+
+    /** 撤回通知刚到、数据库还没被改写时, 把整行快照留给后面的数据库兜底还原用。 */
+    private fun cacheRawSnapshot(serverId: Long) {
+        if (serverId == 0L) return
+        runCatching {
+            val row = WeDatabaseApi.executeQuery(
+                "SELECT * FROM message WHERE msgSvrId = ?",
+                arrayOf<Any>(serverId.toString())
+            ).firstOrNull() ?: return
+            val msgId = (row["msgId"] as? Number)?.toLong() ?: return
+            rawRowCache[msgId] = row
+        }.onFailure { WeLogger.w(TAG, "cacheRawSnapshot failed: ${it.message}") }
     }
 
     override fun onParse(param: XC_MethodHook.MethodHookParam, result: MutableMap<String, Any?>) {
@@ -322,6 +462,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                         WeLogger.i(TAG, "sender is self and not recall outgoing, skipping")
                         return
                     }
+
+                    // 此刻数据库还是撤回前的样子, 先把整行存下来, 后面即使微信改写了也能原样还原。
+                    runCatching { cacheRawSnapshot(msgInfo.serverId) }
 
                     result[TYPE_KEY] = null
 
