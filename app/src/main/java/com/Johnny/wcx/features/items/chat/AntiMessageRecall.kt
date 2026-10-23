@@ -205,11 +205,11 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
      */
     private fun hookRevokeHandler() {
         runCatching {
-            methodRevokeHandler.hookBefore { param ->
+            methodRevokeHandler.hookBefore {
                 runCatching {
-                    val srvId = param.args.firstOrNull { it is Long } as? Long ?: 0L
+                    val srvId = args.firstOrNull { it is Long } as? Long ?: 0L
                     if (shouldBlockRevoke(srvId)) {
-                        param.result = null
+                        result = null
                         WeLogger.i(TAG, "blocked revoke handler (msgSvrId=$srvId)")
                     } else {
                         WeLogger.i(TAG, "let self revoke pass (msgSvrId=$srvId)")
