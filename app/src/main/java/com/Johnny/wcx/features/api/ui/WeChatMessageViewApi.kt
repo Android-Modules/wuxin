@@ -75,22 +75,19 @@ object WeChatMessageViewApi : ApiFeature(), IResolveDex {
         }
     }
 
-    private val methodChatItemOnViewRecycled by dexMethod {
-        matcher {
-            usingStrings("rvnotify-test-onViewRecycled viewType=")
-        }
-    }
-
     override fun onEnable() {
         methodChatItemOnBindView.hookAfter {
-            val holder = args[0]!!
+            val holder = args[0] ?: return@hookAfter
             val view = holder.reflekt()
-                .firstField {
+                .firstFieldOrNull {
                     type = View::class
                     superclass()
                 }
-                .get()!! as View
-            val message = getMsgInfoFromParam(this)
+                ?.get() as? View ?: return@hookAfter
+            val message = runCatching { getMsgInfoFromParam(this) }.getOrElse {
+                WeLogger.w(TAG, "getMsgInfoFromParam failed: ${it.message}")
+                return@hookAfter
+            }
             ensureAttachStateListener(view)
 
             val previous = synchronized(currentBindings) { currentBindings[view] }
@@ -111,21 +108,6 @@ object WeChatMessageViewApi : ApiFeature(), IResolveDex {
                 } catch (ex: Exception) {
                     WeLogger.e(TAG, "listener ${listener.javaClass.name} threw", ex)
                 }
-            }
-        }
-
-        methodChatItemOnViewRecycled.hookBefore {
-            val holder = args[0]!!
-            val view = holder.reflekt()
-                .firstField {
-                    type = View::class
-                    superclass()
-                }
-                .get()!! as View
-            val message = synchronized(currentBindings) { currentBindings[view] } ?: return@hookBefore
-            dispatchLifecycle { it.onMessageViewRecycled(view, message) }
-            synchronized(currentBindings) {
-                currentBindings.remove(view)
             }
         }
     }
