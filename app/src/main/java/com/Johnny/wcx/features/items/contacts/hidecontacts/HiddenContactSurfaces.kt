@@ -219,6 +219,20 @@ object VibrateHiddenSurface : SwitchFeature() {
     override fun onDisable() = HideContacts.onSurfaceChanged()
 }
 
+
+// ── 微信团队汇总提醒 ────────────────────────────────────────────────────────
+
+@Feature(
+    name = HideContacts.SURFACE_TEAM_SUMMARY,
+    categories = ["密友功能"],
+    description = "名单内联系人的通知被隐藏后，改发一条「微信团队」聚合提醒（显示未读条数）",
+)
+object TeamSummarySurface : SwitchFeature() {
+    override val defaultEnabled: Boolean = false
+    override fun onEnable() = HideContacts.onSurfaceChanged()
+    override fun onDisable() = HideContacts.onSurfaceChanged()
+}
+
 /**
  * 各面开关变化后的统一收尾：刷新一次会话列表让结果立刻可见。
  *
