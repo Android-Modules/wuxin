@@ -106,7 +106,9 @@ internal object RecallTagRenderer {
 
         for (index in 0 until list.childCount) {
             val item = list.getChildAt(index) as? ViewGroup ?: continue
+            // 两条路取 msgSvrId：先看 item 子树的 tag，再退回 adapter.getItem(position)。
             val msgId = runCatching { findMsgSvrId(item) }.getOrNull()
+                ?: runCatching { msgIdAtPosition(list, item) }.getOrNull()
             val hit = if (msgId != null) msgId in ids else false
             WeLogger.d(TAG, "item#$index msgSvrId=$msgId hit=$hit")
             val existing = item.findViewWithTag<View>(LABEL_TAG)
@@ -144,6 +146,24 @@ internal object RecallTagRenderer {
             }
         }
         return null
+    }
+
+    /**
+     * 兜底：通过 RecyclerView 的 adapter 取该位置的 item 对象，再读它的 msgSvrId。
+     *
+     * 微信的消息适配器是混淆类，但 `getItem(int)` 这种 public 方法名通常保留；取不到就返回 null，
+     * 不影响上一条路径。
+     */
+    private fun msgIdAtPosition(list: RecyclerView, item: View): String? {
+        val adapter = list.adapter ?: return null
+        val position = list.getChildAdapterPosition(item)
+        if (position < 0) return null
+        val getter = adapter.javaClass.methods.firstOrNull {
+            it.name == "getItem" && it.parameterCount == 1 &&
+                it.parameterTypes[0] == Int::class.javaPrimitiveType
+        } ?: return null
+        val obj = runCatching { getter.invoke(adapter, position) }.getOrNull() ?: return null
+        return (readLongField(obj, "field_msgSvrId") ?: readLongField(obj, "field_msgId"))?.toString()
     }
 
     private fun readLongField(obj: Any, fieldName: String): Long? {
