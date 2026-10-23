@@ -73,6 +73,8 @@ WCX 是一个功能丰富的微信 Xposed 模块, 提供大量微信增强功能
 
 [Telegram 超级群组](https://t.me/+7j5dJ6g16B43OWVl)
 
+[❤️ 爱发电赞助](https://afdian.com/a/Johnny520)
+
 ## 致谢
 
 [WeKit 上游](https://github.com/Ujhhgtg/WeKit)

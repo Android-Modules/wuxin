@@ -259,6 +259,13 @@ cd deobf && ./run_deobf.sh
 | 💬 讨论区 | [https://johnny520.github.io/Johnny/#msg](https://johnny520.github.io/Johnny/#msg) |
 | 📚 项目文档 | [docs/](docs/) |
 | 🐛 提交 Bug | [Issues](https://github.com/Johnny520/wcx/issues) |
+| ❤️ 爱发电赞助 | [https://afdian.com/a/Johnny520](https://afdian.com/a/Johnny520) |
+
+---
+
+## ❤️ 支持作者
+
+WCX 完全免费、没有广告，源码全部公开，日常维护由我一个人完成。如果它帮到了你，欢迎到 [爱发电](https://afdian.com/a/Johnny520) 请我喝杯咖啡 —— 这些支持会用在测试设备和功能开发上。
 
 ---
 
