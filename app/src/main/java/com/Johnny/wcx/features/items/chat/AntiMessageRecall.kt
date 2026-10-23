@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isVisible
 import android.content.ContentValues
+import android.os.Handler
+import android.os.Looper
 import de.robv.android.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
 import com.Johnny.wcx.features.api.core.WeDatabaseApi
@@ -140,6 +142,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     private const val STYLE_BADGE = "badge"
     private const val STYLE_LEGACY = "legacy"
     private const val LEGACY_TIME_FORMAT = "yyyy/MM/dd HH:mm:ss"
+
+    /** 迁移进度要从 IO 线程回到主线程更新 Compose 状态（回调是普通函数类型，不能直接 withContext）。 */
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     /** 迁移旧提示时单次最多扫描的系统消息条数（避免大账号上长时间卡在「正在迁移」）。 */
     private const val MIGRATION_SCAN_LIMIT = 500
@@ -808,7 +813,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                         CoroutineScope(Dispatchers.IO).launch {
                                             val outcome = runCatching {
                                                 migrateLegacyNotices { done, total ->
-                                                    withContext(Dispatchers.Main) {
+                                                    mainHandler.post {
                                                         migrationState =
                                                             MigrationState.Progress(done, total)
                                                     }
