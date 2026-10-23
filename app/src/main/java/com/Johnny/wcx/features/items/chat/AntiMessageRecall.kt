@@ -14,15 +14,21 @@ import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -30,7 +36,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isVisible
 import android.content.ContentValues
@@ -47,7 +55,6 @@ import com.Johnny.wcx.features.core.ClickableFeature
 import com.Johnny.wcx.features.core.Feature
 import com.Johnny.wcx.preferences.WePrefs
 import com.Johnny.wcx.preferences.WePrefs.Companion.prefOption
-import com.Johnny.wcx.ui.content.AlertDialogContent
 import com.Johnny.wcx.ui.content.TextButton
 import com.Johnny.wcx.ui.content.m3.BaseWidget
 import com.Johnny.wcx.ui.content.m3.DropDownMenuWidget
@@ -720,16 +727,35 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             var timeFormatInput by remember { mutableStateOf(legacyTimeFormat) }
             var migrationState by remember { mutableStateOf<MigrationState>(MigrationState.Idle) }
 
-            AlertDialogContent(
-                    title = { Text("防撤回") },
-                    text = {
-                        // 设置项变多后必须能滚：AlertDialogContent 的正文区高度有上限，
-                        // 内容超出就会被裁掉（看起来像卡住/按钮压住输入框）。
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        ) {
+            // 自己排版的弹窗：标题固定、正文可滚动、按钮固定。
+            // 用 AlertDialogContent 时正文区高度写死且标题和正文挤在一起，
+            // 设置项一多就既滑不动、又像是标题压住了内容。
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "防撤回",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    HorizontalDivider()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         SegmentedColumn(contentPadding = PaddingValues(0.dp)) {
                             item {
                                 SwitchWidget(
@@ -888,12 +914,15 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                                 }
                             }
                         }
-                        }
-                    },
-                    dismissButton = {
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
                         TextButton(onDismiss) { Text("关闭") }
-                    },
-            )
+                    }
+                }
+            }
         }
     }
 }
