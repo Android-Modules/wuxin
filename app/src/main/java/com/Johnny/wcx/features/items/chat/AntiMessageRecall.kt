@@ -26,12 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import androidx.core.view.isVisible
+import android.content.ContentValues
 import de.robv.android.xposed.XC_MethodHook
 import dev.ujhhgtg.reflekt.reflekt
-import com.Johnny.wcx.dexkit.abc.IResolveDex
-import com.Johnny.wcx.dexkit.dsl.dexConstructor
-import com.Johnny.wcx.dexkit.dsl.dexMethod
 import com.Johnny.wcx.features.api.core.WeDatabaseApi
+import com.Johnny.wcx.features.api.core.WeDatabaseListenerApi
 import com.Johnny.wcx.features.api.core.WeMessageApi
 import com.Johnny.wcx.features.api.core.WeXmlParserApi
 import com.Johnny.wcx.features.api.core.models.MessageInfo
@@ -54,20 +53,38 @@ import com.Johnny.wcx.ui.utils.findViewWhich
 import com.Johnny.wcx.ui.utils.showComposeDialog
 import com.Johnny.wcx.utils.WeLogger
 import com.Johnny.wcx.utils.android.isDarkMode
+import com.Johnny.wcx.utils.formatEpoch
+import com.Johnny.wcx.utils.strings.isGroupChatWxId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentHashMap
 
 @Feature(name = "防撤回", categories = ["聊天"], description = "阻止撤回消息")
-object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfterParseListener,
-    WeChatMessageViewApi.ICreateViewListener {
+object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListener,
+    WeChatMessageViewApi.ICreateViewListener, WeDatabaseListenerApi.IUpdateListener {
 
     private const val TAG = "AntiMessageRecall"
 
     private var recallOutgoing by prefOption("recall_outgoing", false)
+
+    /**
+     * 旧版样式开关（与徽标样式互斥，同一时间只有一种生效）：
+     * - false（默认）：[STYLE_BADGE] 原消息变淡 + 气泡旁徽标（图标 / 文本二选一）
+     * - true：[STYLE_LEGACY] 在会话里插入一条灰色系统提示（最开始那版防撤回的样式）
+     */
+    private var recallLegacyNotice by prefOption("recall_legacy_notice", false)
+
+    private val displayStyle: String
+        get() = if (recallLegacyNotice) STYLE_LEGACY else STYLE_BADGE
+
+    /** 徽标类型，只在 [STYLE_BADGE] 下生效。 */
     private var badgeType by prefOption("recall_badge_type", BADGE_TYPE_ICON)
+
+    /** 旧版系统提示模板，沿用历史键，未改过则用默认文案。 */
+    private var legacyPattern by prefOption("recall_pattern", "「\$sender」尝试撤回上一条消息 (已阻止)")
     // WeChat only marks a message as revoked AFTER overwriting its row in place (destroying the
     // content). Our blocked recalls leave the row intact and unmarked, so the recalled list must be
     // tracked here, persisted as "<talker>\u001F<msgSvrId>" entries.
@@ -83,10 +100,6 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
     private val dimmedContentViews =
         Collections.synchronizedMap(WeakHashMap<View, View>())
     private val badges = Collections.synchronizedMap(WeakHashMap<View, RecallBadge>())
-
-    // Scenes currently recalling a self-sent message, keyed by the NetSceneRevokeMsg instance, so
-    // the scene-end hook can tell which message row the host is about to destroy.
-    private val pendingRecallMsgs = Collections.synchronizedMap(WeakHashMap<Any, MessageInfo>())
 
     // Unique to NetSceneRevokeMsg's notice converter across the supported host range; anchors the
     // scene class without hard-coding its obfuscated name.
@@ -105,6 +118,13 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
 
     // Badge label; upstream reads it from a string resource.
     private const val BADGE_TEXT = "已撤回"
+
+    private const val STYLE_BADGE = "badge"
+    private const val STYLE_LEGACY = "legacy"
+    private const val LEGACY_TIME_FORMAT = "yyyy/MM/dd HH:mm:ss"
+
+    // 「「xxx」尝试撤回上一条消息」的默认模板与微信自带撤回提示的名字提取
+    private val NAME_REGEX = Regex("([\"「])(.*?)([」\"])")
 
     // Material "delete" glyph on the same 960-unit viewport as the other vector icons.
     private const val DELETE_ICON_PATH =
@@ -126,89 +146,97 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
 
     private fun encodeKey(talker: String, serverId: Long) = "$talker$RECORD_SEPARATOR$serverId"
 
-    // NetSceneRevokeMsg (scene 594, /cgi-bin/micromsg-bin/revokemsg): recalling a message sent from
-    // this device never parses a revoke sysmsg — the scene rewrites the message row in place at
-    // scene end (notice converter, isSend reset, row update), so the XML parser hook never sees it.
-    // The constructor receives the target message; capture it for the scene-end hook.
-    private val methodRevokeMsgSceneInit by dexConstructor {
-        matcher {
-            declaredClass {
-                usingEqStrings(REVOKE_INVOKE_MESSAGE_XML)
-            }
-            paramCount = 3
-        }
-    }
-
-    private val methodRevokeMsgSceneEnd by dexMethod {
-        matcher {
-            declaredClass {
-                usingEqStrings(REVOKE_INVOKE_MESSAGE_XML)
-            }
-            name = "onGYNetEnd"
-            paramCount = 6
-        }
-    }
-
     override fun onEnable() {
         recalledKeyCache = recalledRecords
         WeXmlParserApi.addListener(this)
         WeChatMessageViewApi.addListener(this)
-
-        methodRevokeMsgSceneInit.hookBefore {
-            val captured = MessageInfo(args[0]!!)
-            pendingRecallMsgs[thisObject!!] = captured
-        }
-
-        methodRevokeMsgSceneEnd.hookBefore {
-            if (!recallOutgoing) {
-                WeLogger.i(TAG, "revoke scene end skipped: recall outgoing disabled")
-                return@hookBefore
-            }
-            val msgInfo = pendingRecallMsgs.remove(thisObject!!)
-            if (msgInfo == null) {
-                WeLogger.i(TAG, "revoke scene end skipped: no captured message")
-                return@hookBefore
-            }
-            // Recall rejected (e.g. the 2-minute window expired): keep WeChat's own failure path,
-            // the message row was never rewritten anyway.
-            val errType = args[1] as Int
-            val errCode = args[2] as Int
-            if (errType != 0 || errCode != 0) {
-                WeLogger.i(TAG, "revoke scene end skipped: scene failed")
-                return@hookBefore
-            }
-            if (!msgInfo.isSelfSender) {
-                WeLogger.i(TAG, "revoke scene end skipped: not self sender")
-                return@hookBefore
-            }
-
-            // Resolve the scene queue wrapper first: if that fails we bail out without recording,
-            // so the original body keeps running and the recall just behaves unblocked.
-            val sceneEndField = thisObject!!.reflekt().firstField {
-                type { it.isInterface && it.declaredMethods.any { m -> m.name == "onSceneEnd" } }
-            }
-            val sceneWrapper = sceneEndField.get(thisObject!!)!!
-            @Suppress("UNCHECKED_CAST")
-            val sceneWrapperType = sceneEndField.self.type as Class<Any>
-            val sceneEnd = sceneWrapperType.reflekt()
-                .firstMethod { name = "onSceneEnd"; parameterCount = 4 }
-
-            // Replicate the trailing queue completion of the skipped body so the NetScene queue and
-            // the chat UI (progress dialog dismissal, refresh) finish the scene normally.
-            sceneEnd.invoke(sceneWrapper, errType, errCode, args[3], thisObject)
-
-            val key = encodeKey(msgInfo.talker, msgInfo.serverId)
-            recalledKeyCache = recalledKeyCache + key
-            recalledRecords = recalledKeyCache
-            WeLogger.i(TAG, "kept recalled self message: $key")
-            refreshBoundViews(msgInfo)
-            result = null
-        }
+        WeDatabaseListenerApi.addListener(this)
+        WeLogger.i(TAG, "enabled, style=$displayStyle, recallOutgoing=$recallOutgoing")
     }
 
     override fun onDisable() {
         WeXmlParserApi.removeListener(this)
         WeChatMessageViewApi.removeListener(this)
+        WeDatabaseListenerApi.removeListener(this)
+        rawRowCache.clear()
+    }
+
+    // ── 防撤回自己的消息（数据库更新层） ─────────────────────────────────────────
+    //
+    // 自己撤回走的是本地库改写（把消息行改成「你撤回了一条消息」），不会产生
+    // sysmsg.revokemsg，所以上面那条 XML 分支对它无效。这里挂在 message 表的 update 上：
+    // 认出撤回类更新后，把待写入的值还原成撤回前的原始值，等效阻止撤回。
+    private val rawRowCache = ConcurrentHashMap<Long, Map<String, Any?>>()
+
+    override fun onUpdate(
+        table: String,
+        values: ContentValues,
+        whereClause: String?,
+        whereArgs: Array<String>?,
+        conflictAlgorithm: Int,
+    ) {
+        if (table != "message") return
+        runCatching { interceptSelfRecall(values, whereClause, whereArgs) }
+            .onFailure { WeLogger.e(TAG, "self recall intercept failed", it) }
+    }
+
+    private fun interceptSelfRecall(
+        values: ContentValues,
+        whereClause: String?,
+        whereArgs: Array<String>?,
+    ) {
+        if (!recallOutgoing) return
+        val content = runCatching { values.getAsString("content") }.getOrNull().orEmpty()
+        if (!content.contains("撤回") && !content.contains("revokemsg", ignoreCase = true)) return
+
+        val msgId = extractMsgId(whereClause, whereArgs) ?: return
+        val raw = rawRowCache[msgId] ?: queryRawRow(msgId)?.also { rawRowCache[msgId] = it } ?: return
+        if ((raw["isSend"] as? Number)?.toInt() != 1) return
+
+        restoreRow(values, raw)
+
+        val talker = raw["talker"] as? String
+        val serverId = (raw["msgSvrId"] as? Number)?.toLong() ?: 0L
+        if (displayStyle == STYLE_BADGE && !talker.isNullOrEmpty() && serverId != 0L) {
+            val key = encodeKey(talker, serverId)
+            recalledKeyCache = recalledKeyCache + key
+            recalledRecords = recalledKeyCache
+            refreshBoundViews(talker, serverId)
+        }
+        WeLogger.i(TAG, "blocked self recall (db update): msgId=$msgId")
+    }
+
+    private fun extractMsgId(whereClause: String?, whereArgs: Array<String>?): Long? {
+        if (whereClause == null || whereArgs == null) return null
+        if (!whereClause.contains("msgId", ignoreCase = true)) return null
+        return whereArgs.firstOrNull()?.toLongOrNull()
+    }
+
+    private fun queryRawRow(msgId: Long): Map<String, Any?>? =
+        runCatching {
+            WeDatabaseApi.executeQuery(
+                "SELECT * FROM message WHERE msgId = ?",
+                arrayOf<Any>(msgId.toString())
+            ).firstOrNull()
+        }.getOrNull()
+
+    private fun restoreRow(values: ContentValues, raw: Map<String, Any?>) {
+        val keys = arrayOf(
+            "content", "type", "isSend", "status",
+            "imgPath", "reserved", "transContent", "msgSource", "flag"
+        )
+        for (key in keys) {
+            val v = raw[key] ?: continue
+            when (v) {
+                is Long -> values.put(key, v)
+                is Int -> values.put(key, v)
+                is String -> values.put(key, v)
+                is Double -> values.put(key, v)
+                is Float -> values.put(key, v)
+                is ByteArray -> values.put(key, v)
+                is Boolean -> values.put(key, v)
+            }
+        }
     }
 
     override fun onParse(param: XC_MethodHook.MethodHookParam, result: MutableMap<String, Any?>) {
@@ -237,15 +265,57 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
 
                     result[TYPE_KEY] = null
 
-                    val key = encodeKey(msgInfo.talker, msgInfo.serverId)
-                    recalledKeyCache = recalledKeyCache + key
-                    recalledRecords = recalledKeyCache
+                    if (displayStyle == STYLE_LEGACY) {
+                        // 旧版样式：插一条灰色系统提示，原消息保持不动（不加徽标、不变淡）。
+                        val senderName = resolveSenderName(msgInfo, result)
+                        val noticeText = legacyPattern
+                            .replace("\$sender", senderName)
+                            .replace("\$sendTime", formatEpoch(msgInfo.createTime, LEGACY_TIME_FORMAT))
+                            .replace(
+                                "\$recallTime",
+                                formatEpoch(System.currentTimeMillis(), LEGACY_TIME_FORMAT)
+                            )
+                            .replace("\$content", msgInfo.humanReadableRepr)
+                        WeMessageApi.createSimpleMsgInfoAndInsert(
+                            MessageType.SYSTEM.code,
+                            msgInfo.talker,
+                            noticeText,
+                            msgInfo.createTime + 1
+                        )
+                        WeLogger.i(TAG, "blocked message revoke (legacy notice inserted)")
+                    } else {
+                        val key = encodeKey(msgInfo.talker, msgInfo.serverId)
+                        recalledKeyCache = recalledKeyCache + key
+                        recalledRecords = recalledKeyCache
 
-                    WeLogger.i(TAG, "recorded message revoke: $key")
-                    refreshBoundViews(msgInfo)
+                        WeLogger.i(TAG, "recorded message revoke: $key")
+                        refreshBoundViews(msgInfo)
+                    }
                 }
             }
         }
+    }
+
+    // 旧版提示里的发送者名字：优先用消息自己的发送者取真实显示名——revokemsg 里的名字
+    // 在群里经常是「微信用户」这种占位，直接拿来会张冠李戴。
+    private fun resolveSenderName(
+        msgInfo: MessageInfo,
+        result: Map<String, Any?>,
+    ): String {
+        val replaceMsg = result[".sysmsg.revokemsg.replacemsg"] as? String?
+        val nameFromXml = NAME_REGEX.find(replaceMsg.orEmpty())?.groupValues?.get(2).orEmpty()
+        val fallback = nameFromXml.ifBlank { if (msgInfo.isSelfSender) "自己" else "有人" }
+        return runCatching {
+            val senderWxId = msgInfo.sender
+            when {
+                senderWxId.isBlank() -> fallback
+                msgInfo.talker.isGroupChatWxId ->
+                    WeDatabaseApi.getGroupMemberDisplayName(msgInfo.talker, senderWxId)
+                        .ifBlank { fallback }
+
+                else -> WeDatabaseApi.getDisplayName(msgInfo.talker).ifBlank { fallback }
+            }
+        }.getOrElse { fallback }
     }
 
     // The recall usually arrives while the message row is on screen; restyle it immediately
@@ -265,8 +335,22 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
         }
     }
 
+    private fun refreshBoundViews(talker: String, serverId: Long) {
+        WeChatMessageViewApi.findBoundViews {
+            it.talker == talker && it.serverId == serverId
+        }.forEach { (view, _) ->
+            view.post { applyRecallStyle(view, WeChatMessageViewApi.getBoundMessage(view) ?: return@post) }
+        }
+    }
+
     override fun onCreateView(param: XC_MethodHook.MethodHookParam, view: View) {
-        val msgInfo = WeChatMessageViewApi.getMsgInfoFromParam(param)
+        if (displayStyle == STYLE_LEGACY) {
+            // 旧版样式不画徽标；顺手清掉切换样式前残留的徽标。
+            clearRecallStyle(view)
+            return
+        }
+        val msgInfo = runCatching { WeChatMessageViewApi.getMsgInfoFromParam(param) }.getOrNull()
+            ?: return
         clearRecallStyle(view)
         if (isRecalled(msgInfo)) {
             applyRecallStyle(view, msgInfo)
@@ -279,17 +363,21 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
     // ── recalled-message styling ──────────────────────────────────────────────
 
     private fun applyRecallStyle(view: View, msgInfo: MessageInfo) {
-        val contentView = findMessageContent(view) ?: return
-        val previous = dimmedContentViews.put(view, contentView)
-        if (previous != null && previous !== contentView) previous.alpha = 1f
-        contentView.alpha = RECALL_ALPHA
+        runCatching {
+            val contentView = findMessageContent(view) ?: return
+            val previous = dimmedContentViews.put(view, contentView)
+            if (previous != null && previous !== contentView) previous.alpha = 1f
+            contentView.alpha = RECALL_ALPHA
 
-        attachRecallBadge(view, msgInfo.isSelfSender, contentView)
+            attachRecallBadge(view, msgInfo.isSelfSender, contentView)
+        }.onFailure { WeLogger.w(TAG, "applyRecallStyle failed: ${it.message}") }
     }
 
     private fun clearRecallStyle(view: View) {
-        dimmedContentViews.remove(view)?.alpha = 1f
-        removeRecallBadge(view)
+        runCatching {
+            dimmedContentViews.remove(view)?.alpha = 1f
+            removeRecallBadge(view)
+        }.onFailure { WeLogger.w(TAG, "clearRecallStyle failed: ${it.message}") }
     }
 
     // Every classic chat holder in the supported host range inherits getMainContainerView(), and
@@ -299,14 +387,20 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
     // the whole row avoids depending on message-specific LinearLayout ordering while visibility
     // excludes hidden send-status views that can carry the same tag.
     private fun findMessageContent(view: View): View? {
-        val holder = view.tag!!
-        val mainContainer = holder.reflekt()
-            .firstMethod {
-                name = "getMainContainerView"
-                parameterCount = 0
-                superclass()
-            }
-            .invoke() as? View
+        val holder = view.tag
+        // 上游依赖 holder 继承的 getMainContainerView()；微信改了 holder 结构时它可能不存在，
+        // 这里必须容忍失败，否则整个上色/挂徽标流程会被打断（异常被 Xposed 吞掉，看起来就是没效果）。
+        val mainContainer = holder?.let {
+            runCatching {
+                it.reflekt()
+                    .firstMethodOrNull {
+                        name = "getMainContainerView"
+                        parameterCount = 0
+                        superclass()
+                    }
+                    ?.invoke() as? View
+            }.getOrNull()
+        }
         return mainContainer ?: view.findViewWhich {
             it.isVisible && isTaggedBubbleView(it)
         }
@@ -557,6 +651,7 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
     override fun onClick(context: ComponentActivity) {
         showComposeDialog(context) {
             var recallOutgoingInput by remember { mutableStateOf(recallOutgoing) }
+            var legacyInput by remember { mutableStateOf(recallLegacyNotice) }
             var badgeTypeInput by remember { mutableStateOf(badgeType) }
             var migrationState by remember { mutableStateOf<MigrationState>(MigrationState.Idle) }
 
@@ -580,12 +675,13 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
                                 DropDownMenuWidget(
                                     iconPlaceholder = false,
                                     title = "徽标类型",
-                                    description = null,
+                                    description = if (legacyInput) "当前用旧版样式，此项不生效" else null,
                                     value = badgeTypeInput,
                                     options = listOf(
                                         DropdownOption(BADGE_TYPE_ICON, "图标"),
                                         DropdownOption(BADGE_TYPE_TEXT, "文本"),
                                     ),
+                                    enabled = !legacyInput,
                                     onValueChange = {
                                         badgeTypeInput = it
                                         badgeType = it
@@ -624,6 +720,23 @@ object AntiMessageRecall : ClickableFeature(), IResolveDex, WeXmlParserApi.IAfte
                                     trailingContent = {
                                         if (migrating) {
                                             CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                        }
+                                    },
+                                )
+                            }
+                            item {
+                                SwitchWidget(
+                                    iconPlaceholder = false,
+                                    title = "旧版样式：插入系统消息提示",
+                                    description = "开启后改用最开始那版防撤回：在会话里插一条灰色系统提示（与上面的徽标样式互斥，同时只能用一种）",
+                                    checked = legacyInput,
+                                    onCheckedChange = {
+                                        legacyInput = it
+                                        recallLegacyNotice = it
+                                        if (it) {
+                                            // 切到旧版样式：把已经画上去的徽标清掉。
+                                            WeChatMessageViewApi.findBoundViews { true }
+                                                .forEach { (view, _) -> view.post { clearRecallStyle(view) } }
                                         }
                                     },
                                 )
