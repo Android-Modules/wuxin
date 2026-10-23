@@ -167,6 +167,7 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         WeChatMessageViewApi.removeListener(this)
         WeDatabaseListenerApi.removeListener(this)
         rawRowCache.clear()
+        noticeNotified.clear()
     }
 
     // ── 防撤回自己的消息（数据库更新层） ─────────────────────────────────────────
@@ -176,6 +177,9 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
     // 认出撤回类更新后，把待写入的值还原成撤回前的原始值，等效阻止撤回。
     private val rawRowCache = ConcurrentHashMap<Long, Map<String, Any?>>()
 
+    /** 数据库兜底路径下已经插过提示的消息，避免同一条撤回被改写多次时插出多条提示。 */
+    private val noticeNotified: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
     override fun onUpdate(
         table: String,
         values: ContentValues,
@@ -184,34 +188,62 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
         conflictAlgorithm: Int,
     ) {
         if (table != "message") return
-        runCatching { interceptSelfRecall(values, whereClause, whereArgs) }
-            .onFailure { WeLogger.e(TAG, "self recall intercept failed", it) }
+        runCatching { interceptRecallUpdate(values, whereClause, whereArgs) }
+            .onFailure { WeLogger.e(TAG, "recall intercept (db) failed", it) }
     }
 
-    private fun interceptSelfRecall(
+    /**
+     * 数据库兜底：微信收到撤回后，会把那条消息改写成「xxx撤回了一条消息」。
+     * 这里认出这种改写、把待写入的值还原成撤回前的原始内容，等效阻止撤回。
+     *
+     * 这条路径与 XML 那条互相独立：XML 拦住了就不会有这次改写；XML 没拦住（例如系统版本
+     * 改动导致解析钩子失效）时，这里还能把消息救回来，不至于「开了等于没开」。
+     */
+    private fun interceptRecallUpdate(
         values: ContentValues,
         whereClause: String?,
         whereArgs: Array<String>?,
     ) {
-        if (!recallOutgoing) return
         val content = runCatching { values.getAsString("content") }.getOrNull().orEmpty()
         if (!content.contains("撤回") && !content.contains("revokemsg", ignoreCase = true)) return
 
         val msgId = extractMsgId(whereClause, whereArgs) ?: return
         val raw = rawRowCache[msgId] ?: queryRawRow(msgId)?.also { rawRowCache[msgId] = it } ?: return
-        if ((raw["isSend"] as? Number)?.toInt() != 1) return
+        // 原始行本来就是系统消息 → 不是「正常消息被改写」，不要动。
+        if ((raw["type"] as? Number)?.toInt() == MessageType.SYSTEM.code) return
+
+        val isSend = (raw["isSend"] as? Number)?.toInt() == 1
+        if (isSend && !recallOutgoing) return
 
         restoreRow(values, raw)
 
         val talker = raw["talker"] as? String
         val serverId = (raw["msgSvrId"] as? Number)?.toLong() ?: 0L
-        if (displayStyle == STYLE_BADGE && !talker.isNullOrEmpty() && serverId != 0L) {
+        val createTime = (raw["createTime"] as? Number)?.toLong() ?: 0L
+
+        if (displayStyle == STYLE_LEGACY) {
+            if (!talker.isNullOrEmpty() && noticeNotified.add(msgId)) {
+                val senderName = NAME_REGEX.find(content)?.groupValues?.get(2)
+                    ?: runCatching {
+                        if (isSend) "自己"
+                        else if (!talker.isGroupChatWxId) WeDatabaseApi.getDisplayName(talker)
+                        else ""
+                    }.getOrNull().orEmpty().ifBlank { if (isSend) "自己" else "有人" }
+                WeMessageApi.createSimpleMsgInfoAndInsert(
+                    MessageType.SYSTEM.code,
+                    talker,
+                    buildLegacyNotice(senderName, createTime, ""),
+                    createTime + 1
+                )
+            }
+        } else if (serverId != 0L && !talker.isNullOrEmpty()) {
             val key = encodeKey(talker, serverId)
             recalledKeyCache = recalledKeyCache + key
             recalledRecords = recalledKeyCache
             refreshBoundViews(talker, serverId)
         }
-        WeLogger.i(TAG, "blocked self recall (db update): msgId=$msgId")
+
+        WeLogger.i(TAG, "blocked recall via database (msgId=$msgId, isSend=$isSend)")
     }
 
     private fun extractMsgId(whereClause: String?, whereArgs: Array<String>?): Long? {
@@ -256,6 +288,8 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
             return
         }
 
+        WeLogger.i(TAG, "xml revokemsg seen, type=${result[TYPE_KEY]}")
+
         if (result[TYPE_KEY] == "revokemsg") {
             val cursor = WeDatabaseApi.rawQuery(
                 "SELECT type,content,talker,createTime,lvbuffer,msgId,msgSvrId,isSend FROM message WHERE msgSvrId = ?",
@@ -276,15 +310,8 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                     if (displayStyle == STYLE_LEGACY) {
                         // 旧版样式：插一条灰色系统提示，原消息保持不动（不加徽标、不变淡）。
                         val senderName = resolveSenderName(msgInfo, result)
-                        val timeFormat = legacyTimeFormat
-                        val noticeText = legacyPattern
-                            .replace("\$sender", senderName)
-                            .replace("\$sendTime", formatTime(msgInfo.createTime, timeFormat))
-                            .replace(
-                                "\$recallTime",
-                                formatTime(System.currentTimeMillis(), timeFormat)
-                            )
-                            .replace("\$content", msgInfo.humanReadableRepr)
+                        val noticeText =
+                            buildLegacyNotice(senderName, msgInfo.createTime, msgInfo.humanReadableRepr)
                         WeMessageApi.createSimpleMsgInfoAndInsert(
                             MessageType.SYSTEM.code,
                             msgInfo.talker,
@@ -303,6 +330,16 @@ object AntiMessageRecall : ClickableFeature(), WeXmlParserApi.IAfterParseListene
                 }
             }
         }
+    }
+
+    /** 旧版灰色小字提示的最终文案（XML 路径与数据库兜底路径共用）。 */
+    private fun buildLegacyNotice(senderName: String, createTime: Long, contentText: String): String {
+        val timeFormat = legacyTimeFormat
+        return legacyPattern
+            .replace("\$sender", senderName)
+            .replace("\$sendTime", formatTime(createTime, timeFormat))
+            .replace("\$recallTime", formatTime(System.currentTimeMillis(), timeFormat))
+            .replace("\$content", contentText)
     }
 
     /** 用户自定义的时间模板可能写错，格式化必须兜底，不能让整条提示插不进去。 */
